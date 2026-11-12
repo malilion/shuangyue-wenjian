@@ -1,6 +1,6 @@
 # Music sources
 
-Generated with Google Flow Music (flowmusic.app) on 2026-11-12 from the account owner's session; two takes each,
+Generated with Google Flow Music (flowmusic.app) on 2026-11-12 from the account owner's paid plan session; two takes each,
 take 1 used. `raw/` keeps both takes as downloaded. The `.mp3` files are made with `tools/loop_music.sh`
 (trailing fade removed, tail crossfaded into the head, loudness normalised to -18 LUFS).
 
@@ -14,4 +14,4 @@ take 1 used. `raw/` keeps both takes as downloaded. The `.mp3` files are made wi
 | battle3.mp3 | Celestial Guard Duel | brass, war drums, yangqin, dizi, timpani, A minor, 138 BPM |
 | boss3.mp3 | Lord of the Sky Gate | war drums, low brass, tubular bells, suona, erhu, D minor, 156 BPM |
 
-Usage rights follow Google Flow Music's terms for the generating account; check them before distributing.
+Generated under the account owner's paid Google Flow Music plan.

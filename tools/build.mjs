@@ -1,3 +1,4 @@
+// 改自 https://github.com/op7418/guizang-game-skill（AGPL-3.0）。
 // Shrink the generated assets and inline everything into one HTML: node tools/build.mjs   (run from game/)
 // 1. textures -> webp at a sane size, meshopt-packed geometry (skinned characters are NOT quantised: that rescales the
 //    mesh and breaks height measurement and preset clips)   2. esbuild bundle   3. data URLs in dist/shuangyue.html

@@ -1,3 +1,4 @@
+// 改自 https://github.com/op7418/guizang-game-skill（AGPL-3.0）。
 // Tiny static server for local play: node game/serve.mjs
 import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
 const root = path.dirname(fileURLToPath(import.meta.url)); const port = +process.env.PORT || 5173;

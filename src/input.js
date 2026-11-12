@@ -1,3 +1,4 @@
+// 改自 https://github.com/op7418/guizang-game-skill（AGPL-3.0）。
 // Keyboard and mouse state that survives lost key-up events, plus an F3 panel for reporting input problems.
 // Usage: import { keys, pressed, mouse, endFrame, debugPanel } from './input.js';  call endFrame() once per frame.
 export const keys = new Set(), pressed = new Set(), mouse = { x: 0, y: 0 };

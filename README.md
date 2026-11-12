@@ -113,9 +113,13 @@ node tools/build.mjs    # 產生 dist/shuangyue.html（單檔）與 dist/site/�
 
 ## 素材來源
 
-- 角色、武器、場景道具、靈獸：Hyper3D Rodin 生成（編號見 `assets/generations.json`），設定圖在 `concept/`。
+- 角色、武器、場景道具、靈獸：Hyper3D Rodin 生成（編號見 `assets/generations.json`）。
 - 音效：OpenGameArt 上的 CC0 音效包，見 `assets/sfx/SOURCES.md`。
-- 配樂：Google Flow Music 生成，見 `assets/music/SOURCES.md`。對外發佈前請確認其使用條款。
-- 標題字與技能圖示：圖像模型生成後裁切。
+- 配樂：Google Flow Music 付費方案生成，見 `assets/music/SOURCES.md`。
+- 標題字、技能圖示與 `concept/` 設定圖：以 Codex 的 GPT 圖像模型生成後裁切。
 
-`src/input.js`、`serve.mjs` 與打包腳本改自 guizang-game-skill（AGPL-3.0）。
+## 授權
+
+本專案程式碼以 [GNU Affero General Public License v3.0](LICENSE)（AGPL-3.0）授權。
+
+`src/input.js`、`serve.mjs` 與打包腳本 `tools/build.mjs` 改自歸藏 [guizang-game-skill](https://github.com/op7418/guizang-game-skill)（AGPL-3.0），特此致謝。
