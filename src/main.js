@@ -3,9 +3,9 @@ import * as THREE from 'three';
 import { keys, pressed, mouse, endFrame, debugPanel } from './input.js';
 import { createRender } from './render.js';
 import { buildWorld, clampToArena, ARENA_R } from './world.js';
-import { FX } from './fx.js';
+import { FX, swordMesh } from './fx.js';
 import { makeBody, poseBody } from './body.js';
-import { initAudio, sfx, music, musicState } from './audio.js';
+import { initAudio, sfx, music, musicState, audioProbe } from './audio.js';
 import { loadGLB, makeCharBody } from './chars.js';
 
 const Q = new URLSearchParams(location.search), $ = (id) => document.getElementById(id);
@@ -46,7 +46,7 @@ const ATK = [
 ];
 const P = G.player = {
   pos: new THREE.Vector3(0, 0, 7), yaw: Math.PI, r: .45, hp: 120, maxHp: 120, st: 100, qi: 30, state: 'idle', t: 0, dur: 0, combo: 0, hitstop: 0, iframe: 0,
-  ult: Q.has('ult') ? 100 : 0, buf: null, bufT: 0, parryT: 9, counterT: 0, counterFrom: null, cdQ: 0, cdE: 0, kb: new THREE.Vector3(), anim: 'idle', animP: 0, phase: 0, idleT: 0, y: 0,
+  orbitT: 0, cdF: 0, cdC: 0, lean: 0, flyV: new THREE.Vector3(), ult: Q.has('ult') ? 100 : 0, buf: null, bufT: 0, parryT: 9, counterT: 0, counterFrom: null, cdQ: 0, cdE: 0, kb: new THREE.Vector3(), anim: 'idle', animP: 0, phase: 0, idleT: 0, y: 0,
   body: bodyFor('player', { h: 1.75, robe: 0xdde6e8, trim: 0x2b7480, skin: 0xd8b99b, dark: 0x1c2230, bun: true, weapon: { len: 1.15, w: .05, color: 0xcfe9ee, glow: 0x0c3a40 } }),
 };
 scene.add(P.body.root);
@@ -68,7 +68,7 @@ function startAttack(i) {
 }
 function startDodge(mx, mz) {
   const l = Math.hypot(mx, mz); P.dx = l ? mx / l : Math.sin(P.yaw); P.dz = l ? mz / l : Math.cos(P.yaw); P.yaw = Math.atan2(P.dx, P.dz);
-  P.state = 'dodge'; P.t = 0; P.iframe = .3; P.st -= 18; P.hitstop = 0; P.perfect = false; P.buf = null; sfx('dodge');
+  P.state = 'dodge'; P.t = 0; P.lean = 0; P.iframe = .3; P.st -= 18; P.hitstop = 0; P.perfect = false; P.buf = null; sfx('dodge');
   for (let i = 0; i < 8; i++) fx.p.spawn(P.pos.x, .15, P.pos.z, (Math.random() - .5) * 2, .6, (Math.random() - .5) * 2, .5, .5, .25, .3, .36, 0, 2);
 }
 function startCounter() {
@@ -85,10 +85,11 @@ function playerHit(A, yaw, target) {
 
 function updatePlayer(dt) {
   const B = P.body; P.idleT += dt;
+  if (P.state !== 'fly' && P.state !== 'dive' && P.state !== 'ult') { P.y = Math.max(0, (P.y || 0) - dt * 9); P.lean = 0; }      /* anything that ends flight drops him back to the ground */
   if (P.state === 'dead') { P.t += dt; P.anim = 'dead'; P.animP = P.t / .7; return; }
-  if (pressed.has('LMB')) setBuf('atk'); if (pressed.has('Space')) setBuf('dodge'); if (pressed.has('KeyQ')) setBuf('q'); if (pressed.has('KeyE')) setBuf('e'); if (pressed.has('KeyR')) setBuf('r');
+  if (pressed.has('LMB')) setBuf('atk'); if (pressed.has('Space')) setBuf('dodge'); if (pressed.has('KeyQ')) setBuf('q'); if (pressed.has('KeyE')) setBuf('e'); if (pressed.has('KeyR')) setBuf('r'); if (pressed.has('KeyF')) setBuf('f'); if (pressed.has('KeyC')) setBuf('c');
   P.bufT -= dt; if (P.bufT <= 0) P.buf = null;
-  P.iframe = Math.max(0, P.iframe - dt); P.cdQ = Math.max(0, P.cdQ - dt); P.cdE = Math.max(0, P.cdE - dt); P.counterT = Math.max(0, P.counterT - dt);
+  P.iframe = Math.max(0, P.iframe - dt); P.cdQ = Math.max(0, P.cdQ - dt); P.cdE = Math.max(0, P.cdE - dt); P.cdF = Math.max(0, P.cdF - dt); P.cdC = Math.max(0, P.cdC - dt); if (P.state !== 'fly') P.qi = Math.min(100, P.qi + 2 * dt); P.counterT = Math.max(0, P.counterT - dt);
   const mx = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), mz = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0), ml = Math.hypot(mx, mz), aimYaw = angTo(P.pos, aim);
   if (P.buf === 'dodge' && P.st >= 18 && P.state !== 'hurt' && P.state !== 'counter' && P.state !== 'dodge' && P.state !== 'ult') startDodge(mx, mz);     // dodge cuts through everything, hitstop included
   if (P.hitstop > 0) { P.hitstop -= dt; return; }
@@ -99,11 +100,16 @@ function updatePlayer(dt) {
     if (P.buf === 'atk') { P.buf = null; if (P.counterT > 0 && P.counterFrom && !P.counterFrom.dead) startCounter(); else startAttack(0); return true; }
     if (P.buf === 'q' && P.cdQ <= 0 && P.qi >= 25) { P.buf = null; P.qi -= 25; P.cdQ = 3.5; P.state = 'skill'; P.skill = 'q'; P.t = 0; P.hitDone = false; P.yaw = aimYaw; sfx('cast'); return true; }
     if (P.buf === 'e' && P.cdE <= 0 && P.qi >= 50) { P.buf = null; P.qi -= 50; P.cdE = 8; P.state = 'skill'; P.skill = 'e'; P.t = 0; P.hitDone = false; P.yaw = aimYaw; sfx('cast'); return true; }
+    if (P.buf === 'f' && P.cdF <= 0 && P.qi >= 30) { P.buf = null; P.qi -= 30; P.cdF = 6; P.state = 'skill'; P.skill = 'f'; P.t = 0; P.hitDone = false; P.yaw = aimYaw; sfx('cast'); return true; }
+    if (P.buf === 'c' && P.cdC <= 0 && P.qi >= 35) { P.buf = null; P.qi -= 35; P.cdC = 12; P.orbitT = ORBIT; sfx('cast'); sfx('ring'); fx.ring(P.pos, 3.2, ICE, .5); return true; }
     return false;
   };
+  const shift = keys.has('ShiftLeft') || keys.has('ShiftRight'), rim = () => { const d = Math.hypot(P.pos.x, P.pos.z), m = ARENA_R - P.r; if (d > m) { P.pos.x *= m / d; P.pos.z *= m / d; } };
   switch (P.state) {
     case 'idle':
       if (tryActions()) break;
+      if (!shift) P.noFly = false;
+      if (shift && !P.noFly && P.qi >= 8) { P.state = 'fly'; P.t = 0; P.flyV.set(0, 0, 0); sfx('dodge'); sfx('ring'); fx.ring(P.pos, 2.2, ICE, .4); break; }      /* mount the sword */
       if (keys.has('RMB') && P.st > 0) { P.state = 'block'; P.parryT = 0; break; }
       if (ml > 0) { move(P, mx / ml * 6.2 * dt, mz / ml * 6.2 * dt); P.yaw = turn(P.yaw, Math.atan2(mx, mz), dt * 14); P.anim = 'run'; P.phase += dt * 12; if (Math.random() < dt * 9) fx.p.spawn(P.pos.x, .08, P.pos.z, 0, .5, 0, .5, .35, .16, .19, .23, 0, 2); }
       else P.anim = 'idle';
@@ -129,6 +135,21 @@ function updatePlayer(dt) {
       if (P.buf === 'atk' || P.buf === 'q' || P.buf === 'e' || (P.buf === 'r' && P.ult >= 100)) { P.state = 'idle'; tryActions(); break; }
       if (!keys.has('RMB')) P.state = 'idle'; regen(8); break;
     case 'hurt': P.t += dt; P.anim = 'hurt'; if (P.t >= P.dur) P.state = 'idle'; break;
+    case 'fly': {       /* riding the sword: fast, above melee reach and obstacles, drains qi */
+      P.t += dt; P.qi = Math.max(0, P.qi - 8 * dt); const up = Math.min(1, P.t / .3); P.y = 1.25 * up * (2 - up) + Math.sin(G.time * 3) * .06;
+      const k = 1 - Math.exp(-dt * 5); P.flyV.x += ((ml ? mx / ml * 10.5 : 0) - P.flyV.x) * k; P.flyV.z += ((ml ? mz / ml * 10.5 : 0) - P.flyV.z) * k; P.pos.x += P.flyV.x * dt; P.pos.z += P.flyV.z * dt; rim();
+      const v = Math.hypot(P.flyV.x, P.flyV.z); if (v > 1) P.yaw = turn(P.yaw, Math.atan2(P.flyV.x, P.flyV.z), dt * 10); P.anim = 'fly'; P.lean = .1 + v * .022;
+      if (Math.random() < dt * (20 + v * 6)) fx.p.spawn(P.pos.x - Math.sin(P.yaw) * 1.2 + (Math.random() - .5) * .3, P.y + .05, P.pos.z - Math.cos(P.yaw) * 1.2 + (Math.random() - .5) * .3, 0, .2, 0, .45, .28, .35, 1.2, 1.4, 0, 1);
+      if (P.buf === 'atk') { P.buf = null; P.state = 'dive'; P.t = 0; P.yaw = aimYaw; P.diveHit = new Set(); P.diveFrom = P.pos.clone(); P.iframe = .55; sfx('heavy'); break; }
+      if (!shift || P.qi <= 0) { P.state = 'idle'; P.noFly = true; clampToArena(P.pos, P.r); fx.ring(P.pos, 1.8, ICE, .35); }
+      break; }
+    case 'dive': {      /* sword-borne lunge: a straight piercing dash that ends the flight */
+      P.t += dt; const p = Math.min(1, P.t / .3), st = 27 * dt; P.pos.x += Math.sin(P.yaw) * st; P.pos.z += Math.cos(P.yaw) * st; rim(); P.y = 1.25 * (1 - p) + .2; P.lean = .65; P.anim = 'windup'; P.animP = 1; P.swingDir = 1; P.tilt = 0;
+      for (let i = 0; i < 3; i++) fx.p.spawn(P.pos.x + (Math.random() - .5) * .5, P.y + Math.random(), P.pos.z + (Math.random() - .5) * .5, 0, .5, 0, .35, .3, .4, 1.4, 1.6, 0, 1);
+      for (const e of [...G.enemies]) if (!e.dead && !P.diveHit.has(e) && dist(P.pos, e.pos) < 1.7 + e.r) { P.diveHit.add(e); if (damageEnemy(e, 34, { from: P.diveFrom, heavy: true, stop: .08, kb: 3, poise: 22 })) { sfx('hitHeavy'); gainUlt(8); P.qi = Math.min(100, P.qi + 3); G.shake = Math.max(G.shake, .35); } }
+      if (p >= 1) { const d = dist(P.diveFrom, P.pos), mid = { x: (P.diveFrom.x + P.pos.x) / 2, z: (P.diveFrom.z + P.pos.z) / 2 }; clampToArena(P.pos, P.r);
+        fx.lineSlash(mid, P.yaw, d + 3, .8, [.8, 1.6, 1.8], .38); fx.lineSlash(mid, P.yaw, d + 3, 2, [.1, .32, .38], .5, .08); fx.ring(P.pos, 3.4, ICE, .45); fx.crack(P.pos, 1.7, TEAL, 2.2); G.shake = Math.max(G.shake, .45); sfx('hitHeavy'); P.state = 'idle'; P.noFly = true; }      /* Shift must be pressed again to remount */
+      break; }
     case 'ult': {
       P.t += dt; const t = P.t, up = Math.min(1, t / .55), k = up * up * (3 - 2 * up); P.hidden = t >= ULT.cut && t < ULT.fin - .07;
       if (t < ULT.fin - .1) { P.y = .95 * k + Math.sin(t * 4) * .04; P.anim = 'leap'; P.animP = up; if (Math.random() < dt * 60) { const a = Math.random() * TAU, r = 1 + Math.random() * 8; fx.p.spawn(P.ultC.x + Math.sin(a) * r, .1, P.ultC.z + Math.cos(a) * r, 0, 2.5 + Math.random() * 3.5, 0, .8, .13, .4, 1.2, 1.4, 0, .5); } }
@@ -149,6 +170,8 @@ function updatePlayer(dt) {
       if (P.t >= .16 && !P.hitDone) {
         P.hitDone = true;
         if (P.skill === 'q') { const c = fx.crescent({ color: TEAL, radius: 1.9, arc: 1.9 }); G.projs.push({ team: 'p', pos: P.pos.clone().add(new THREE.Vector3(Math.sin(P.yaw), 0, Math.cos(P.yaw))), yaw: P.yaw, speed: 24, r: 1.5, dmg: 26, life: .7, pierce: true, hit: new Set(), fxh: c, color: TEAL }); sfx('heavy'); }
+        else if (P.skill === 'f') { for (let i = -1; i <= 1; i++) { const g = new THREE.Group(), sm = swordMesh([.5, 1.6, 1.8], 1.3); sm.rotation.x = -Math.PI / 2; sm.position.z = .8; g.add(sm); scene.add(g);
+          G.projs.push({ team: 'p', homing: true, sword: true, pos: P.pos.clone(), yaw: P.yaw + i * .95, speed: 17, r: .75, dmg: 12, life: 2.7, pierce: true, hit: new Set(), hitT: .55, mesh: g, color: TEAL }); } sfx('swing'); sfx('ring'); }
         else { const d = Math.min(10, dist(P.pos, aim)), tp = new THREE.Vector3(P.pos.x + Math.sin(P.yaw) * d, 0, P.pos.z + Math.cos(P.yaw) * d); clampToArena(tp, .2); fx.telegraph({ kind: 'circle', pos: tp, radius: 3.3, dur: .5, color: TEAL }); fx.fallSword(tp, [.5, 1.7, 1.9], .5, 1.25);
           after(.5, () => { fx.ring(tp, 4.6, TEAL, .55); fx.crack(tp, 3.3, TEAL, 3); fx.burst(tp, 30, TEAL, 7, 5, .3, .7, .3); G.shake = .5; sfx('boom'); for (const e of [...G.enemies]) if (!e.dead && dist(tp, e.pos) < 3.3 + e.r) damageEnemy(e, 58, { from: tp, heavy: true, stop: .12, kb: 3, poise: 30 }); }); }
       }
@@ -182,6 +205,20 @@ function startUlt() {
   });
 }
 
+// ---------- sword array (C): four blades circle him, cutting whatever they touch and swatting bolts out of the air
+const ORBIT = 6.5, orbit = Array.from({ length: 4 }, () => { const s = swordMesh([.5, 1.5, 1.7], 1.5); s.visible = false; scene.add(s); return s; });
+function updateOrbit(dt) {
+  const on = P.orbitT > 0 && P.state !== 'dead'; if (on) P.orbitT -= dt; const k = on ? Math.min(1, (ORBIT - P.orbitT) / .3, P.orbitT / .4) : 0;
+  orbit.forEach((s, i) => {
+    s.visible = k > .01; if (!s.visible) return; const a = G.time * 5.2 + i * TAU / 4, r = 2.3; s.position.set(P.pos.x + Math.sin(a) * r, (P.y || 0) + .55 + Math.sin(G.time * 3 + i) * .1, P.pos.z + Math.cos(a) * r); s.rotation.set(Math.cos(a) * .3, 0, -Math.sin(a) * .3); s.scale.setScalar(Math.max(.01, k));
+    if (Math.random() < dt * 18) fx.p.spawn(s.position.x, s.position.y + .8, s.position.z, 0, .3, 0, .3, .22, .35, 1.2, 1.4, 0, 1);
+    for (const e of [...G.enemies]) if (!e.dead && e.spawnT <= 0 && (e.orbitCd || 0) <= G.time && dist(s.position, e.pos) < .8 + e.r) { e.orbitCd = G.time + .45; if (damageEnemy(e, 9, { from: P.pos, stop: .03, kb: .7, poise: 3, noChain: true, stun: .14 })) { sfx('hit'); gainUlt(1); } }
+  });
+  if (on) for (const b of G.projs) if (b.team === 'e' && b.cut && dist(b.pos, P.pos) < 2.8) { b.life = 0; fx.sparks({ x: b.pos.x, y: 1.1, z: b.pos.z }, b.yaw + Math.PI, 10, CRIM, 6, 1.5); }
+}
+// the sword he rides
+const board = new THREE.Group(); { const bs = swordMesh([.55, 1.7, 1.9], 2.1); bs.rotation.x = -Math.PI / 2; bs.position.z = 1.25; board.add(bs); board.visible = false; scene.add(board); }
+
 // Something hits the player. o: { from, src (attacker), unblockable, proj }. Returns 'hit' | 'block' | 'parry' | 'miss'.
 function damagePlayer(dmg, o) {
   if (P.state === 'dead') return 'miss';
@@ -209,7 +246,7 @@ function damagePlayer(dmg, o) {
 const KINDS = {
   melee: { hp: 70, speed: 3.0, r: .5, body: { h: 1.72, bulk: 1.05, robe: 0x55594f, trim: 0x6a4a35, skin: 0x8d978a, talisman: true, weapon: { len: .95, w: .08, color: 0x6d6258 } } },
   ranged: { hp: 46, speed: 2.9, r: .45, body: { h: 1.66, bulk: .86, robe: 0x40203f, trim: 0x8c1f2a, skin: 0xe6e2da, hat: true } },
-  boss: { hp: 1600, speed: 3.4, r: 1.0, poise: 100, body: { h: 2.55, bulk: 1.38, robe: 0x1d1418, trim: 0x7d1a22, skin: 0xa58d80, dark: 0x15131a, metal: 0x2b2a30, pauldron: true, horn: true, weapon: { len: 2.3, w: .17, color: 0x26242b, glow: 0x3a0508 } } },
+  boss: { hp: 2000, speed: 3.4, r: 1.0, poise: 100, body: { h: 2.55, bulk: 1.38, robe: 0x1d1418, trim: 0x7d1a22, skin: 0xa58d80, dark: 0x15131a, metal: 0x2b2a30, pauldron: true, horn: true, weapon: { len: 2.3, w: .17, color: 0x26242b, glow: 0x3a0508 } } },
 };
 function spawn(kind, x, z) {
   const D = KINDS[kind];
@@ -245,7 +282,7 @@ const strike = (o) => ({
   start(e) {
     if (o.step) move(e, Math.sin(e.yaw) * o.step, Math.cos(e.yaw) * o.step);
     fx.slash({ pos: e.pos, yaw: e.yaw, radius: o.range, arc: o.arc, dir: o.dir ?? 1, tilt: o.tilt, color: o.color ?? AMBER, dur: .3, width: o.width ?? .45, y: e.kind === 'boss' ? 1.5 : 1.05 }); sfx(e.kind === 'boss' ? 'heavy' : 'swing');
-    if (inFan(e.pos, e.yaw, P.pos, o.range, o.arc, .35)) { const r = damagePlayer(o.dmg, { from: e.pos, src: e }); if (r === 'hit') e.hitstop = .07; }
+    if (P.state !== 'fly' && P.state !== 'dive' && inFan(e.pos, e.yaw, P.pos, o.range, o.arc, .35)) { const r = damagePlayer(o.dmg, { from: e.pos, src: e }); if (r === 'hit') e.hitstop = .07; }
     if (e.kind === 'boss' && e.body.weapon.userData.blade) e.body.weapon.userData.blade.emissive.setRGB(0, 0, 0);
   },
 });
@@ -293,7 +330,7 @@ const BOSS = {
     const s = [{ dur: e.p2 ? .9 : 1.05, anim: 'leap',
       start(b) { b.from = b.pos.clone(); b.to = clampToArena(P.pos.clone(), b.r); b.tele = fx.telegraph({ kind: 'circle', pos: b.to, radius: 3.7, dur: this.dur, color: CRIM }); },
       tick(b, p) { if (p > .28) { const u = (p - .28) / .72, q = u * u * (3 - 2 * u); b.pos.lerpVectors(b.from, b.to, q); b.y = Math.sin(u * Math.PI) * 3.4; b.yaw = angTo(b.from, b.to) || b.yaw; } },
-      end(b) { b.y = 0; b.tele = null; fx.ring(b.pos, 5.2, CRIM, .6); fx.crack(b.pos, 3.7, CRIM, 3.5); fx.burst(b.pos, 40, [1.2, .5, .3], 8, 5, .34, .8, .2); G.shake = .7; sfx('boom'); if (dist(b.pos, P.pos) < 3.7 + P.r) damagePlayer(26, { from: b.pos, src: b, unblockable: true }); } }, rest(e.p2 ? .9 : 1.25)];
+      end(b) { b.y = 0; b.tele = null; fx.ring(b.pos, 5.2, CRIM, .6); fx.crack(b.pos, 3.7, CRIM, 3.5); fx.burst(b.pos, 40, [1.2, .5, .3], 8, 5, .34, .8, .2); G.shake = .7; sfx('boom'); if (P.state !== 'fly' && dist(b.pos, P.pos) < 3.7 + P.r) damagePlayer(26, { from: b.pos, src: b, unblockable: true }); } }, rest(e.p2 ? .9 : 1.25)];
     s.cd = .8; return s;
   },
   waves(e) {
@@ -325,11 +362,11 @@ function damageEnemy(e, dmg, o = {}) {
   const c = { x: e.pos.x - Math.sin(a) * e.r * .8, y: boss ? 1.5 : 1.1, z: e.pos.z - Math.cos(a) * e.r * .8 };
   fx.sparks(c, a + (o.dir || 0) * 1.1, o.heavy ? 20 : 10, boss ? [2, 1.2, .6] : [1.2, 1.8, 1.1], o.heavy ? 12 : 8, .6);
   if (boss) { e.poise -= o.poise ?? (o.heavy ? 18 : 6); if (e.poise <= 0 && e.stun <= 0 && !e.invuln) breakBoss(e); if (!e.p2 && e.hp <= e.maxHp * .5 && e.hp > 0) phaseTwo(e); }
-  else if (e.kind === 'melee' && !o.heavy && !interrupted && ++e.chain >= 3 && e.hp > 0) {      /* third light hit in a row: it shrugs it off and answers */
+  else if (e.kind === 'melee' && !o.heavy && !o.noChain && !interrupted && ++e.chain >= 3 && e.hp > 0) {      /* third light hit in a row: it shrugs it off and answers */
     e.chain = 0; e.stun = 0; cancelSeq(e); e.yaw = angTo(e.pos, P.pos); fx.ring(e.pos, 1.5, AMBER, .3);
     const s = [wind(.4, { kind: 'fan', radius: 2.9, arc: 2.1, color: AMBER }, { dir: -1, track: .7 }), strike({ range: 2.9, arc: 2.1, dmg: 13, dir: -1, step: .6 }), rest(.8)]; s.cd = 1; startSeq(e, s, 'riposte');
   }
-  else { cancelSeq(e); e.stun = interrupted ? 1.1 : o.heavy ? .6 : .32; if (o.heavy || interrupted) e.chain = 0; const k = (o.kb ?? 1.2) * 6.5; e.kb.set(Math.sin(a) * k, 0, Math.cos(a) * k); if (interrupted) fx.ring(e.pos, 1.8, GOLD, .35); }
+  else { if (!o.noChain) cancelSeq(e); e.stun = o.stun ?? (interrupted ? 1.1 : o.heavy ? .6 : .32); if (o.heavy || interrupted) e.chain = 0; const k = (o.kb ?? 1.2) * 6.5; e.kb.set(Math.sin(a) * k, 0, Math.cos(a) * k); if (interrupted) fx.ring(e.pos, 1.8, GOLD, .35); }
   if (e.hp <= 0) kill(e, a);
   return true;
 }
@@ -353,9 +390,14 @@ function updateEnemy(e, dt) {
 
 function updateProjs(dt) {
   for (const b of G.projs) {
+    if (b.homing) {      /* guided swords: chase the nearest enemy not struck in the last half second, come home at the end */
+      b.hitT -= dt; if (b.hitT <= 0) { b.hit.clear(); b.hitT = .55; } let t = null, bd = 1e9;
+      for (const e of G.enemies) if (!e.dead && e.spawnT <= 0 && !b.hit.has(e)) { const d = dist(b.pos, e.pos); if (d < bd) { bd = d; t = e; } }
+      if (!t || b.life < .45) t = P; b.yaw = turn(b.yaw, angTo(b.pos, t.pos), dt * 9); if (b.life < .45 && dist(b.pos, P.pos) < 1) b.life = 0;
+    }
     b.life -= dt; b.pos.x += Math.sin(b.yaw) * b.speed * dt; b.pos.z += Math.cos(b.yaw) * b.speed * dt;
-    if (Math.hypot(b.pos.x, b.pos.z) > ARENA_R + 2.5) b.life = 0;
-    const m = b.mesh || b.fxh.mesh; m.position.set(b.pos.x, 1.05, b.pos.z); m.rotation.y = b.yaw; if (b.mesh) { m.rotation.x += dt * 9; fx.p.spawn(b.pos.x, 1.05, b.pos.z, 0, .3, 0, .3, .3, b.color[0], b.color[1] * .5, b.color[2] * .5); }
+    if (!b.homing && Math.hypot(b.pos.x, b.pos.z) > ARENA_R + 2.5) b.life = 0;
+    const m = b.mesh || b.fxh.mesh; m.position.set(b.pos.x, 1.05, b.pos.z); m.rotation.y = b.yaw; if (b.mesh) { if (!b.sword) m.rotation.x += dt * 9; fx.p.spawn(b.pos.x, 1.05, b.pos.z, 0, .3, 0, .3, .3, b.color[0], b.color[1] * .5, b.color[2] * .5); }
     if (b.life <= 0) continue;
     if (b.team === 'e') {
       if (dist(b.pos, P.pos) < b.r + P.r) { const r = damagePlayer(b.dmg, { from: { x: b.pos.x - Math.sin(b.yaw), z: b.pos.z - Math.cos(b.yaw) }, src: b.src, proj: true });
@@ -368,8 +410,9 @@ function updateProjs(dt) {
 function separate() {
   const L = G.enemies.filter((e) => !e.dead && e.spawnT <= 0 && e.y < .5);
   for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) { const a = L[i], b = L[j], dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z, d = Math.hypot(dx, dz) || .001, o = a.r + b.r + .15 - d; if (o > 0) { const wa = b.kind === 'boss' ? 1 : a.kind === 'boss' ? 0 : .5; a.pos.x -= dx / d * o * wa; a.pos.z -= dz / d * o * wa; b.pos.x += dx / d * o * (1 - wa); b.pos.z += dz / d * o * (1 - wa); } }
-  if (P.state !== 'dodge' && P.state !== 'dead') for (const e of L) { const dx = P.pos.x - e.pos.x, dz = P.pos.z - e.pos.z, d = Math.hypot(dx, dz) || .001, o = P.r + e.r - d; if (o > 0) { const w = e.kind === 'boss' ? 1 : .6; P.pos.x += dx / d * o * w; P.pos.z += dz / d * o * w; e.pos.x -= dx / d * o * (1 - w); e.pos.z -= dz / d * o * (1 - w); } }
-  for (const e of L) clampToArena(e.pos, e.r); clampToArena(P.pos, P.r);
+  const air = P.state === 'fly' || P.state === 'dive';
+  if (P.state !== 'dodge' && P.state !== 'dead' && !air) for (const e of L) { const dx = P.pos.x - e.pos.x, dz = P.pos.z - e.pos.z, d = Math.hypot(dx, dz) || .001, o = P.r + e.r - d; if (o > 0) { const w = e.kind === 'boss' ? 1 : .6; P.pos.x += dx / d * o * w; P.pos.z += dz / d * o * w; e.pos.x -= dx / d * o * (1 - w); e.pos.z -= dz / d * o * (1 - w); } }
+  for (const e of L) clampToArena(e.pos, e.r); if (!air) clampToArena(P.pos, P.r);
 }
 
 // ---------- flow ----------
@@ -386,7 +429,7 @@ function startBoss() {
   showBanner('厲無咎', '守在這裡的，是當年親手關上山門的人。', 3.6);
 }
 function startGame(stage) {
-  clearField(); Object.assign(P, { ult: Q.has('ult') ? 100 : 0, hp: P.maxHp, st: 100, qi: 30, state: 'idle', hidden: false, t: 0, hitstop: 0, iframe: 1, buf: null, counterT: 0, cdQ: 0, cdE: 0, yaw: Math.PI, y: 0 }); P.pos.set(0, 0, 7); P.kb.set(0, 0, 0);
+  clearField(); Object.assign(P, { orbitT: 0, cdF: 0, cdC: 0, lean: 0, ult: Q.has('ult') ? 100 : 0, hp: P.maxHp, st: 100, qi: 30, state: 'idle', hidden: false, t: 0, hitstop: 0, iframe: 1, buf: null, counterT: 0, cdQ: 0, cdE: 0, yaw: Math.PI, y: 0 }); P.pos.set(0, 0, 7); P.kb.set(0, 0, 0);
   world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); $('boss').classList.remove('on'); G.slow = 0; G.intro = 0; setMode('play');
   if (stage === 'boss') startBoss(); else { G.phase = 'wave'; startWave(); }
 }
@@ -396,6 +439,8 @@ function flow(dt) {
   G.intro = Math.max(0, G.intro - dt);
   for (let i = G.enemies.length - 1; i >= 0; i--) { const e = G.enemies[i]; if (e.dead && e.kind !== 'boss' && e.deadT > 3.2) { scene.remove(e.body.root); G.enemies.splice(i, 1); } }
 }
+/* sound starts on the first click or key press of any kind (browsers require a gesture), not only on the title click */
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => initAudio(Q.has('mute')), true);
 addEventListener('mousedown', () => { if (!G.ready) return; if (G.mode !== 'play') { initAudio(Q.has('mute')); startGame(G.mode === 'win' ? undefined : (G.mode === 'dead' && G.boss ? 'boss' : Q.get('stage'))); pressed.delete('LMB'); } });
 
 // ---------- camera, hud ----------
@@ -406,18 +451,19 @@ function updateCamera(dt) {
   else { ft.copy(P.pos); const b = G.boss; if (b && !b.dead) { const dx = b.pos.x - P.pos.x, dz = b.pos.z - P.pos.z, d = Math.hypot(dx, dz) || 1, k = G.intro > .6 ? Math.min(d * .75, 9) : Math.min(d * .22, 3); ft.x += dx / d * k; ft.z += dz / d * k; } ft.x += Math.max(-1, Math.min(1, (aim.x - P.pos.x) * .05)); ft.z += Math.max(-1, Math.min(1, (aim.z - P.pos.z) * .05)); }
   if (G.camO) { camera.position.copy(G.camO.pos); camera.lookAt(G.camO.look); return; }   /* test hook: close-up showcase camera */
   G.focus.lerp(ft, 1 - Math.exp(-dt * (G.intro > 0 ? 2.2 : 5))); G.shake = Math.max(0, G.shake - dt * 1.8);
-  const ulting = P.state === 'ult' && G.mode === 'play', zt = !ulting ? 1 : P.t < ULT.cut ? .82 : P.t < ULT.fin ? .94 : 1.18; G.zoom += (zt - G.zoom) * (1 - Math.exp(-dt * (zt > 1 ? 14 : 3.5)));
+  const ulting = P.state === 'ult' && G.mode === 'play', zt = !ulting ? (P.state === 'fly' && G.mode === 'play' ? 1.1 : 1) : P.t < ULT.cut ? .82 : P.t < ULT.fin ? .94 : 1.18; G.zoom += (zt - G.zoom) * (1 - Math.exp(-dt * (zt > 1 ? 14 : 3.5)));
   const s = G.shake * G.shake * 1.6; camera.position.set(G.focus.x + CAM.x * G.zoom + (Math.random() - .5) * s, CAM.y * G.zoom + (Math.random() - .5) * s, G.focus.z + CAM.z * G.zoom + (Math.random() - .5) * s * .5);
   G.flash = Math.max(0, G.flash - dt * 3.4); const gu = R.grade.uniforms; gu.uFlash.value = G.flash * G.flash; gu.uExposure.value += ((ulting && P.t < ULT.fin ? (P.t < ULT.cut ? .56 : .34) : 1.15) - gu.uExposure.value) * (1 - Math.exp(-dt * (ulting && P.t >= ULT.cut ? 22 : 6)));
   G.shock = Math.max(0, G.shock - dt * 2.2); gu.uShock.value = G.shock; gu.uMono.value += ((ulting && P.t >= ULT.cut - .04 && P.t < ULT.fin ? 1 : 0) - gu.uMono.value) * (1 - Math.exp(-dt * 30));
 }
 const W = (el, v) => { el.style.width = (Math.max(0, Math.min(1, v)) * 100).toFixed(1) + '%'; };
-const hud = { hp: $('hp').children, st: $('st').children, qi: $('qi').children, bhp: $('bhp').children, bpo: $('bpo').children, hurt: $('hurt'), counter: $('counter'), sq: $('s-q'), ur: $('s-r-ring'), se: $('s-e'), sd: $('s-dge'), sb: $('s-blk') };
+const hud = { hp: $('hp').children, st: $('st').children, qi: $('qi').children, bhp: $('bhp').children, bpo: $('bpo').children, hurt: $('hurt'), counter: $('counter'), sq: $('s-q'), sf: $('s-f'), sc: $('s-c'), sfl: $('s-fly'), ur: $('s-r-ring'), se: $('s-e'), sd: $('s-dge'), sb: $('s-blk') };
 function updateHud(dt) {
   W(hud.hp[0], P.hp / P.maxHp); W(hud.hp[1], P.hp / P.maxHp); W(hud.st[0], P.st / 100); W(hud.qi[0], P.qi / 100);
   const b = G.boss; if (b) { W(hud.bhp[0], b.hp / b.maxHp); W(hud.bhp[1], b.hp / b.maxHp); W(hud.bpo[0], b.poise / b.maxPoise); }
   G.hurtFlash = Math.max(0, (G.hurtFlash || 0) - dt * 2.2); hud.hurt.style.opacity = (G.hurtFlash * .7 + (P.hp < 30 && P.state !== 'dead' ? .18 + .1 * Math.sin(G.time * 6) : 0)).toFixed(2);
   hud.counter.classList.toggle('on', P.counterT > 0 && G.mode === 'play');
+  hud.sf.classList.toggle('dim', P.qi < 30); hud.sf.lastElementChild.style.height = (P.cdF / 6 * 100) + '%'; hud.sc.classList.toggle('dim', P.qi < 35 && P.orbitT <= 0); hud.sc.lastElementChild.style.height = (P.cdC / 12 * 100) + '%'; hud.sfl.classList.toggle('dim', P.qi < 8 && P.state !== 'fly'); hud.sfl.classList.toggle('active', P.state === 'fly');
   hud.sq.classList.toggle('dim', P.qi < 25); hud.sq.lastElementChild.style.height = (P.cdQ / 3.5 * 100) + '%';
   hud.se.classList.toggle('dim', P.qi < 50); hud.se.lastElementChild.style.height = (P.cdE / 8 * 100) + '%';
   hud.ur.style.setProperty('--p', P.ult.toFixed(0) + '%'); hud.ur.parentNode.classList.toggle('ready', P.ult >= 100);
@@ -425,7 +471,7 @@ function updateHud(dt) {
   if (bannerT > 0) { bannerT -= dt; if (bannerT <= 0) bannerEl.classList.remove('on'); }
 }
 function place(a, dt) {
-  const B = a.body, j = a.hitstop > 0 && a !== P ? .05 : 0; B.root.position.set(a.pos.x + (Math.random() - .5) * j, a.y || 0, a.pos.z + (Math.random() - .5) * j); B.root.rotation.y = a.yaw; B.root.visible = !a.hidden;
+  const B = a.body, j = a.hitstop > 0 && a !== P ? .05 : 0; B.root.position.set(a.pos.x + (Math.random() - .5) * j, a.y || 0, a.pos.z + (Math.random() - .5) * j); B.root.rotation.order = 'YXZ'; B.root.rotation.set(a.lean || 0, a.yaw, 0); B.root.visible = !a.hidden;
   if (!(a.hitstop > 0)) { if (B.pose) B.pose(a, dt); else poseBody(B, a, dt); }
   const f = a.flash > 0 ? a.flash / .14 : 0; if (a !== P) for (const m of B.mats) if (!m.userData.base) { m.emissive.setScalar(f * .9); }
   if (a.bar) { const y = 2.25 * B.s + (a.y || 0); a.bar[0].position.set(a.pos.x - .52, y, a.pos.z); a.bar[1].position.set(a.pos.x - .5, y, a.pos.z); a.bar[1].scale.x = Math.max(.001, a.hp / a.maxHp); const v = a.hp < a.maxHp && !a.dead; a.bar[0].visible = a.bar[1].visible = v; }
@@ -437,11 +483,12 @@ function update(dt) {
   if (G.mode === 'play') {
     updateAim(); G.tokenCd = Math.max(0, G.tokenCd - dt);
     for (let i = G.timers.length - 1; i >= 0; i--) { const t = G.timers[i]; t.t -= dt; if (t.t <= 0) { G.timers.splice(i, 1); t.fn(); } }
-    updatePlayer(dt); const frozen = P.state === 'ult' && P.t < ULT.fin;
+    updatePlayer(dt); updateOrbit(dt); const frozen = P.state === 'ult' && P.t < ULT.fin;
     for (const e of [...G.enemies]) { if (frozen && !e.dead) { e.flash = Math.max(0, e.flash - dt); e.hitstop = Math.max(0, e.hitstop - dt); if (e.kb.lengthSq() > .02) { move(e, e.kb.x * dt, e.kb.z * dt); e.kb.multiplyScalar(Math.exp(-8 * dt)); } e.anim = 'hurt'; continue; } updateEnemy(e, dt); }
     separate(); if (!frozen) updateProjs(dt); flow(dt);
   } else P.anim = P.state === 'dead' ? 'dead' : 'idle';
   place(P, dt); for (const e of G.enemies) place(e, dt);
+  board.visible = G.mode === 'play' && (P.state === 'fly' || P.state === 'dive'); if (board.visible) { board.position.set(P.pos.x, (P.y || 0) - .04, P.pos.z); board.rotation.order = 'YXZ'; board.rotation.set(-(P.lean || 0) * .6, P.yaw, 0); }
   if (Math.random() < dt * 5) { const L = world.lanterns[Math.random() * 4 | 0].l.position; fx.p.spawn(L.x, 1.7, L.z, (Math.random() - .5) * .5, .7 + Math.random(), (Math.random() - .5) * .5, 1.6, .09, 2, .8, .25, -.3, .6); }
   music(G.mode !== 'play' ? 'explore' : G.phase === 'boss' && G.boss && !G.boss.dead ? 'boss' : G.phase === 'wave' ? 'battle' : 'explore');
   fx.update(dt); updateCamera(dt); updateHud(dt);
@@ -455,7 +502,7 @@ function frame(now, forced) {
 const dbg = debugPanel(() => `mode ${G.mode}/${G.phase}  state ${P.state}  t ${P.t.toFixed(2)}\npos ${P.pos.x.toFixed(1)},${P.pos.z.toFixed(1)}  rim ${(ARENA_R - Math.hypot(P.pos.x, P.pos.z)).toFixed(1)}\nhp ${P.hp | 0} st ${P.st | 0} qi ${P.qi | 0} ult ${P.ult | 0}  enemies ${alive().length}`);
 // test hooks: advance frames by hand (hidden tabs do not animate), fake a key press, read state
 G.step = (n = 60, dt = 1 / 60) => { for (let i = 0; i < n; i++) frame(0, dt); };
-G.clamp = clampToArena; G.music = musicState; G.press = (...c) => c.forEach((k) => pressed.add(k)); G.keys = keys; G.mouse = mouse; G.aim = aim; G.R = R; G.world = world;
+G.clamp = clampToArena; G.music = musicState; G.audio = audioProbe; G.press = (...c) => c.forEach((k) => pressed.add(k)); G.keys = keys; G.mouse = mouse; G.aim = aim; G.R = R; G.world = world;
 G.state = () => ({ mode: G.mode, phase: G.phase, p: { s: P.state, hp: Math.round(P.hp), st: Math.round(P.st), qi: Math.round(P.qi), x: +P.pos.x.toFixed(2), z: +P.pos.z.toFixed(2) }, e: G.enemies.map((e) => ({ k: e.kind, hp: Math.round(e.hp), x: +e.pos.x.toFixed(1), z: +e.pos.z.toFixed(1), dead: e.dead, seq: e.seq ? e.last + ':' + e.si : '', stun: +e.stun.toFixed(2) })), projs: G.projs.length, fx: fx.items.length });
 
 G.ready = true; $('go').textContent = '點擊開始';

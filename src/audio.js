@@ -2,10 +2,11 @@
 // little pitch drift. Synth layers only fill gaps (sub thump under hits, a metallic ping on parry). If a sample is
 // missing the synth cue alone still plays. Music is not wired yet.
 let ctx = null, out = null, buf = null;
+let analyser = null;
 export function initAudio(muted) {
-  if (muted || ctx) return;
+  if (muted) return; if (ctx) { if (ctx.state !== 'running') ctx.resume(); return; }
   try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
-  out = ctx.createGain(); out.gain.value = .55; out.connect(ctx.destination); loadSamples(); loadMusic();
+  out = ctx.createGain(); out.gain.value = .55; analyser = ctx.createAnalyser(); analyser.fftSize = 2048; out.connect(analyser); out.connect(ctx.destination); if (ctx.state !== 'running') ctx.resume(); loadSamples(); loadMusic();
   buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate); const d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
 }
 function noise(dur, f0, f1, gain, q = 1.2, type = 'bandpass') {
@@ -31,6 +32,8 @@ async function loadMusic() {
 }
 function applyMusic(fade) { if (!ctx) return; const t = ctx.currentTime; for (const [n, g] of Object.entries(tracks)) { g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(n === want ? MUSIC_GAIN : 0, t + fade); } }
 export function music(name, fade = 1.6) { if (name === want) return; want = name; applyMusic(fade); }
+// what is actually leaving the mixer right now (for checking that sound really plays, not just that files decode)
+export const audioProbe = () => { if (!ctx) return { ctx: 'none' }; const d = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(d); let s = 0; for (const v of d) s += v * v; return { ctx: ctx.state, rms: +Math.sqrt(s / d.length).toFixed(4), samples: Object.keys(samples).length, time: +ctx.currentTime.toFixed(2) }; };
 export const musicState = () => ({ want, loaded: Object.keys(tracks), gains: Object.fromEntries(Object.entries(tracks).map(([n, g]) => [n, +g.gain.value.toFixed(3)])) });
 // cue -> [variant count, gain, playback-rate centre]; cues can borrow another cue's files
 const BANK = { swing: [5, .5, 1], heavy: ['swing', .65, .72], hit: [3, .8, 1], hitHeavy: [2, .95, .9], parry: [2, 1, 1.1], ring: [1, .7, 1], block: [3, .7, 1], hurt: [2, .7, 1], dodge: [2, .45, 1], cast: [3, .45, 1], bolt: [3, .5, 1.1], boom: [3, .9, .85], die: [3, .6, 1], roar: [2, .8, .9] };

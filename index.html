@@ -31,11 +31,12 @@
   #bhp { height: 11px; } #bhp .fill { background: linear-gradient(180deg, #c9413a, #6f1418); }
   #bpo { height: 3px; width: 46%; margin: 5px auto 0; } #bpo .fill { background: #e2c88a; } #bpo::after { display: none; }
 
-  #skills { position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%); display: flex; gap: 12px; }
+  #skills { position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%); display: flex; gap: 8px; }
   .slot { position: relative; width: 58px; height: 58px; border-radius: 50%; border: 1px solid rgba(225, 235, 240, .45); background: radial-gradient(circle at 50% 35%, rgba(60, 90, 100, .55), rgba(6, 10, 14, .85)); overflow: hidden; box-shadow: 0 0 14px rgba(0, 0, 0, .6); }
   .slot b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 25px; font-weight: 400; color: #dff6f6; text-shadow: 0 0 10px rgba(127, 227, 230, .7); }
   .slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .slot .cd { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(0, 0, 0, .72); }
+  .slot.active { box-shadow: 0 0 18px rgba(127, 227, 230, .9); border-color: #bff; }
   .slot.dim b { color: #6b777b; text-shadow: none; } .slot.dim img { filter: grayscale(1) brightness(.45); }
   .slotw { position: relative; width: 62px; height: 80px; display: grid; justify-items: center; }
   .slotw.ult { width: 78px; margin-left: 10px; } .slotw.ult .slot { width: 66px; height: 66px; margin-top: -4px; } .slotw.ult .slot b { color: #f3e2ad; text-shadow: 0 0 10px rgba(226, 200, 138, .8); }
@@ -90,6 +91,9 @@
     <div class="slotw"><div class="slot" id="s-dge"><b>閃</b><img src="assets/ui/icon_dge.png" alt="" onerror="this.remove()"><div class="cd"></div></div><em>空白</em></div>
     <div class="slotw"><div class="slot" id="s-q"><b>氣</b><img src="assets/ui/icon_q.png" alt="" onerror="this.remove()"><div class="cd"></div></div><em>Q</em></div>
     <div class="slotw"><div class="slot" id="s-e"><b>落</b><img src="assets/ui/icon_e.png" alt="" onerror="this.remove()"><div class="cd"></div></div><em>E</em></div>
+    <div class="slotw"><div class="slot" id="s-f"><b>御</b><img src="assets/ui/icon_f.png" alt="" onerror="this.remove()"><div class="cd"></div></div><em>F</em></div>
+    <div class="slotw"><div class="slot" id="s-c"><b>陣</b><img src="assets/ui/icon_c.png" alt="" onerror="this.remove()"><div class="cd"></div></div><em>C</em></div>
+    <div class="slotw"><div class="slot" id="s-fly"><b>飛</b><img src="assets/ui/icon_fly.png" alt="" onerror="this.remove()"><div class="cd"></div></div><em>Shift</em></div>
     <div class="slotw ult"><div class="charge" id="s-r-ring"></div><div class="slot" id="s-r"><b>絕</b><img src="assets/ui/icon_r.png" alt="" onerror="this.remove()"></div><em>R</em></div>
   </div>
 </div>
@@ -102,7 +106,8 @@
     <div class="go" id="go">載入中</div>
     <div class="keys">
       <kbd>W A S D</kbd>移動<kbd>左鍵</kbd>三段斬<kbd>右鍵</kbd>格擋，剛舉劍時接住即彈反<br>
-      <kbd>空白</kbd>閃避<kbd>Q</kbd>劍氣<kbd>E</kbd>落劍<kbd>R</kbd>劍意滿時放大招<kbd>F3</kbd>除錯面板
+      <kbd>空白</kbd>閃避<kbd>Q</kbd>劍氣<kbd>E</kbd>落劍<kbd>F</kbd>御劍追魂<kbd>C</kbd>劍陣環身<br>
+      <kbd>Shift</kbd>按住御劍飛行，飛行中左鍵俯衝突刺<kbd>R</kbd>劍意滿時放大招<kbd>F3</kbd>除錯面板
     </div>
   </div>
 </div>
