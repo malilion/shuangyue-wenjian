@@ -1,0 +1,7 @@
+node_modules/
+dist/opt/
+shots/
+assets/models/*.glb
+assets/music/raw/
+*.log
+.DS_Store
