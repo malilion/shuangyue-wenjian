@@ -110,3 +110,34 @@ export function makeCharBody(gltf, o) {
   }
   return { root, mats, s, pose, bones: B, weapon: { userData: { blade: bladeMat } }, acts, isChar: true };
 }
+
+// A summoned spirit beast: a rigged quadruped (Rodin "quadruped" skeleton with the canine clip set) drawn as glowing,
+// slightly translucent spirit matter. o: { length, clips: { name: animation_id }, glow, glowI }
+export function makeBeast(gltf, o) {
+  const inner = SkeletonUtils.clone(gltf.scene), fit = new THREE.Group(), root = new THREE.Group(), mats = []; root.add(fit); fit.add(inner);
+  let rootBone = null, head = null;
+  inner.traverse((n) => {
+    if (n.isBone) { if (!rootBone && !(n.parent && n.parent.isBone)) rootBone = n; if (!head && /head/i.test(n.name)) head = n; }
+    if (n.isMesh) { n.frustumCulled = false; const m = n.material = n.material.clone(); m.emissive = new THREE.Color(o.glow ?? 0x4fd9e6); m.emissiveMap = m.map; m.emissiveIntensity = o.glowI ?? 1.1; m.transparent = true; m.opacity = .88; mats.push(m); }
+  });
+  // clips: no scale tracks, and the root bone's horizontal travel pinned (the game moves the beast)
+  if (!gltf.userData.bclips) {
+    gltf.scene.updateMatrixWorld(true); const rb = gltf.scene.getObjectByName(rootBone.name), pq = rb.parent.getWorldQuaternion(Qn()), pqi = pq.clone().invert(), rest = rb.position.clone().applyQuaternion(pq), out = {};
+    for (const c of gltf.animations) { const tracks = c.tracks.filter((t) => !t.name.endsWith('.scale')).map((t) => t.clone());
+      for (const t of tracks) if (t.name === rootBone.name + '.position') for (let i = 0; i < t.values.length; i += 3) { a0.fromArray(t.values, i).applyQuaternion(pq); a0.x = rest.x; a0.z = rest.z; a0.applyQuaternion(pqi).toArray(t.values, i); }
+      out[c.name] = new THREE.AnimationClip(c.name, c.duration, tracks); }
+    gltf.userData.bclips = out;
+  }
+  // long axis along +Z with the head leading, scaled to the requested body length, paws on the ground
+  root.updateMatrixWorld(true); let box = new THREE.Box3().setFromObject(inner); const size = box.getSize(V()); if (size.x > size.z) fit.rotation.y = Math.PI / 2; root.updateMatrixWorld(true);
+  if (head) { box = new THREE.Box3().setFromObject(inner); if (head.getWorldPosition(V()).z < box.getCenter(V()).z) fit.rotation.y += Math.PI; } if (o.flip) fit.rotation.y += Math.PI; root.updateMatrixWorld(true);
+  box = new THREE.Box3().setFromObject(inner); fit.scale.setScalar(o.length / (box.max.z - box.min.z)); root.updateMatrixWorld(true);
+  box = new THREE.Box3().setFromObject(inner); fit.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+  const mixer = new THREE.AnimationMixer(inner), acts = {}; for (const [name, id] of Object.entries(o.clips)) if (gltf.userData.bclips[id]) acts[name] = mixer.clipAction(gltf.userData.bclips[id]);
+  let now = null;
+  function play(name, { once = false, ts = 1, fade = .12 } = {}) {
+    const A = acts[name] || acts.idle; if (!A) return; if (A === now && !once) { A.timeScale = ts; return; }
+    A.reset(); A.timeScale = ts; A.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity); A.clampWhenFinished = once; A.play(); if (now && now !== A) now.crossFadeTo(A, fade, false); now = A;
+  }
+  return { root, mats, play, update: (dt) => mixer.update(dt), bones: { root: rootBone && rootBone.name, head: head && head.name }, clipNames: Object.keys(gltf.userData.bclips) };
+}

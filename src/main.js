@@ -6,7 +6,7 @@ import { buildWorld, clampToArena, ARENA_R } from './world.js';
 import { FX, swordMesh } from './fx.js';
 import { makeBody, poseBody } from './body.js';
 import { initAudio, sfx, music, musicState, audioProbe } from './audio.js';
-import { loadGLB, makeCharBody } from './chars.js';
+import { loadGLB, makeCharBody, makeBeast } from './chars.js';
 
 const Q = new URLSearchParams(location.search), $ = (id) => document.getElementById(id);
 const R = createRender($('c')), { scene, camera } = R;
@@ -23,7 +23,7 @@ const inFan = (src, yaw, tgt, range, arc, pad = 0) => { const d = dist(src, tgt)
 const move = (a, dx, dz) => { a.pos.x += dx; a.pos.z += dz; clampToArena(a.pos, a.r); };
 const TEAL = [.4, 1.25, 1.4], AMBER = [1.6, .62, .16], CRIM = [1.7, .16, .22], GOLD = [1.8, 1.3, .55];
 
-const G = window.G = { mode: 'title', phase: 'wave', time: 0, shake: 0, slow: 0, token: null, tokenCd: 0, enemies: [], projs: [], timers: [], boss: null, god: Q.has('god'), zoom: 1, flash: 0, shock: 0, fx, focus: new THREE.Vector3(0, 0, 3), intro: 0 };
+const G = window.G = { loaded: 0, mode: 'title', phase: 'wave', time: 0, shake: 0, slow: 0, token: null, tokenCd: 0, enemies: [], projs: [], timers: [], boss: null, god: Q.has('god'), zoom: 1, flash: 0, shock: 0, fx, focus: new THREE.Vector3(0, 0, 3), intro: 0 };
 const after = (t, fn) => G.timers.push({ t, fn });
 
 // ---------- generated characters (fall back to the stand-in bodies when a file is missing) ----------
@@ -34,7 +34,7 @@ const CH = {
   boss: { h: 2.6, runTs: 1.3, weapon: 'w_great', weaponLen: 2.5, clips: { idle: 'human_000040', guard: 'human_000040', run: 'human_000089', hit: 'human_000003', death: 'human_000074' } },
 };
 const GL = {};
-if (!Q.has('standin')) await Promise.all(['player', 'melee', 'ranged', 'boss', 'w_jian', 'w_dao', 'w_great', 'lantern', 'pillar_tall', 'pillar_broken', 'pillar_fallen', 'burner', 'gate'].map(async (n) => { GL[n] = await loadGLB(`assets/models/${n}.glb`); }));
+if (!Q.has('standin')) await Promise.all(['player', 'melee', 'ranged', 'boss', 'w_jian', 'w_dao', 'w_great', 'lantern', 'pillar_tall', 'pillar_broken', 'pillar_fallen', 'burner', 'gate', 'beast'].map(async (n, i, all) => { GL[n] = await loadGLB(`assets/models/${n}.glb`); $('go').textContent = `載入中 ${++G.loaded} / ${all.length}`; }));
 const bodyFor = (kind, standIn) => (GL[kind] ? makeCharBody(GL[kind], { ...CH[kind], weapon: GL[CH[kind].weapon] || null, borrow: CH[kind].borrow ? CH[kind].borrow(GL) : null }) : makeBody(standIn));
 G.GL = GL; world.useProps(GL);
 
@@ -46,7 +46,7 @@ const ATK = [
 ];
 const P = G.player = {
   pos: new THREE.Vector3(0, 0, 7), yaw: Math.PI, r: .45, hp: 120, maxHp: 120, st: 100, qi: 30, state: 'idle', t: 0, dur: 0, combo: 0, hitstop: 0, iframe: 0,
-  orbitT: 0, cdF: 0, cdC: 0, lean: 0, flyV: new THREE.Vector3(), ult: Q.has('ult') ? 100 : 0, buf: null, bufT: 0, parryT: 9, counterT: 0, counterFrom: null, cdQ: 0, cdE: 0, kb: new THREE.Vector3(), anim: 'idle', animP: 0, phase: 0, idleT: 0, y: 0,
+  orbitT: 0, cdF: 0, cdC: 0, cdV: 0, lean: 0, flyV: new THREE.Vector3(), ult: Q.has('ult') ? 100 : 0, buf: null, bufT: 0, parryT: 9, counterT: 0, counterFrom: null, cdQ: 0, cdE: 0, kb: new THREE.Vector3(), anim: 'idle', animP: 0, phase: 0, idleT: 0, y: 0,
   body: bodyFor('player', { h: 1.75, robe: 0xdde6e8, trim: 0x2b7480, skin: 0xd8b99b, dark: 0x1c2230, bun: true, weapon: { len: 1.15, w: .05, color: 0xcfe9ee, glow: 0x0c3a40 } }),
 };
 scene.add(P.body.root);
@@ -87,9 +87,9 @@ function updatePlayer(dt) {
   const B = P.body; P.idleT += dt;
   if (P.state !== 'fly' && P.state !== 'dive' && P.state !== 'ult') { P.y = Math.max(0, (P.y || 0) - dt * 9); P.lean = 0; }      /* anything that ends flight drops him back to the ground */
   if (P.state === 'dead') { P.t += dt; P.anim = 'dead'; P.animP = P.t / .7; return; }
-  if (pressed.has('LMB')) setBuf('atk'); if (pressed.has('Space')) setBuf('dodge'); if (pressed.has('KeyQ')) setBuf('q'); if (pressed.has('KeyE')) setBuf('e'); if (pressed.has('KeyR')) setBuf('r'); if (pressed.has('KeyF')) setBuf('f'); if (pressed.has('KeyC')) setBuf('c');
+  if (pressed.has('LMB')) setBuf('atk'); if (pressed.has('Space')) setBuf('dodge'); if (pressed.has('KeyQ')) setBuf('q'); if (pressed.has('KeyE')) setBuf('e'); if (pressed.has('KeyR')) setBuf('r'); if (pressed.has('KeyF')) setBuf('f'); if (pressed.has('KeyC')) setBuf('c'); if (pressed.has('KeyV')) setBuf('v');
   P.bufT -= dt; if (P.bufT <= 0) P.buf = null;
-  P.iframe = Math.max(0, P.iframe - dt); P.cdQ = Math.max(0, P.cdQ - dt); P.cdE = Math.max(0, P.cdE - dt); P.cdF = Math.max(0, P.cdF - dt); P.cdC = Math.max(0, P.cdC - dt); if (P.state !== 'fly') P.qi = Math.min(100, P.qi + 2 * dt); P.counterT = Math.max(0, P.counterT - dt);
+  P.iframe = Math.max(0, P.iframe - dt); P.cdQ = Math.max(0, P.cdQ - dt); P.cdE = Math.max(0, P.cdE - dt); P.cdF = Math.max(0, P.cdF - dt); P.cdC = Math.max(0, P.cdC - dt); P.cdV = Math.max(0, P.cdV - dt); if (P.state !== 'fly') P.qi = Math.min(100, P.qi + 2 * dt); P.counterT = Math.max(0, P.counterT - dt);
   const mx = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), mz = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0), ml = Math.hypot(mx, mz), aimYaw = angTo(P.pos, aim);
   if (P.buf === 'dodge' && P.st >= 18 && P.state !== 'hurt' && P.state !== 'counter' && P.state !== 'dodge' && P.state !== 'ult') startDodge(mx, mz);     // dodge cuts through everything, hitstop included
   if (P.hitstop > 0) { P.hitstop -= dt; return; }
@@ -101,6 +101,7 @@ function updatePlayer(dt) {
     if (P.buf === 'q' && P.cdQ <= 0 && P.qi >= 25) { P.buf = null; P.qi -= 25; P.cdQ = 3.5; P.state = 'skill'; P.skill = 'q'; P.t = 0; P.hitDone = false; P.yaw = aimYaw; sfx('cast'); return true; }
     if (P.buf === 'e' && P.cdE <= 0 && P.qi >= 50) { P.buf = null; P.qi -= 50; P.cdE = 8; P.state = 'skill'; P.skill = 'e'; P.t = 0; P.hitDone = false; P.yaw = aimYaw; sfx('cast'); return true; }
     if (P.buf === 'f' && P.cdF <= 0 && P.qi >= 30) { P.buf = null; P.qi -= 30; P.cdF = 6; P.state = 'skill'; P.skill = 'f'; P.t = 0; P.hitDone = false; P.yaw = aimYaw; sfx('cast'); return true; }
+    if (P.buf === 'v' && P.cdV <= 0 && P.qi >= 45 && GL.beast) { P.buf = null; P.qi -= 45; P.cdV = 20; summonBeast(); return true; }
     if (P.buf === 'c' && P.cdC <= 0 && P.qi >= 35) { P.buf = null; P.qi -= 35; P.cdC = 12; P.orbitT = ORBIT; sfx('cast'); sfx('ring'); fx.ring(P.pos, 3.2, ICE, .5); return true; }
     return false;
   };
@@ -216,6 +217,32 @@ function updateOrbit(dt) {
   });
   if (on) for (const b of G.projs) if (b.team === 'e' && b.cut && dist(b.pos, P.pos) < 2.8) { b.life = 0; fx.sparks({ x: b.pos.x, y: 1.1, z: b.pos.z }, b.yaw + Math.PI, 10, CRIM, 6, 1.5); }
 }
+// ---------- spirit beast (V): a white tiger of spirit matter fights beside him for a while
+let beast = null;
+function summonBeast() {
+  if (!beast) { beast = { body: makeBeast(GL.beast, { length: 3, clips: { idle: 'canine_000001', run: 'canine_000002', atk1: 'canine_000011', atk2: 'canine_000012', lunge: 'canine_000015' } }), pos: new THREE.Vector3(), yaw: 0, side: 1 }; scene.add(beast.body.root); }
+  const b = beast, a = P.yaw + Math.PI / 2; b.pos.set(P.pos.x + Math.sin(a) * 2, 0, P.pos.z + Math.cos(a) * 2); clampToArena(b.pos, .6); b.yaw = P.yaw; b.life = 12; b.atk = 0; b.cd = .35; b.k = 0; b.on = true;
+  fx.sigil(b.pos, 2.8, [.3, 1, 1.2], 1.2); fx.ring(b.pos, 3.4, ICE, .5); fx.beam(b.pos, 8, 1, [.16, .5, .6], .8); fx.burst(b.pos, 26, [.3, .9, 1], 5, 5, .3, .8, .3); sfx('roar'); sfx('cast'); G.shake = Math.max(G.shake, .3);
+}
+function updateBeast(dt) {
+  const b = beast; if (!b) return; if (!b.on || G.mode !== 'play') { b.on = false; b.body.root.visible = false; return; }
+  b.life -= dt; b.k = Math.min(1, b.k + dt * 4); b.cd -= dt; const R0 = b.body.root; R0.visible = true; R0.scale.setScalar(Math.max(.01, b.k * Math.min(1, b.life / .35)));
+  if (b.life <= 0) { b.on = false; R0.visible = false; fx.burst(b.pos, 24, [.3, .9, 1], 4, 5, .3, .8, .5); fx.ring(b.pos, 2.5, ICE, .4); return; }
+  let t = null, bd = 1e9; for (const e of G.enemies) if (!e.dead && e.spawnT <= 0) { const d = dist(b.pos, e.pos); if (d < bd) { bd = d; t = e; } }
+  const go = (a, step) => { b.pos.x += Math.sin(a) * step; b.pos.z += Math.cos(a) * step; clampToArena(b.pos, .5); };
+  if (b.atk > 0) {
+    b.atk -= dt; if (!b.hit && b.atk < .33) { b.hit = true; fx.slash({ pos: b.pos, yaw: b.yaw, radius: 2.7, arc: 1.7, dir: b.side, color: [.4, 1.2, 1.3], dur: .26, width: .5, y: .9 }); fx.slash({ pos: b.pos, yaw: b.yaw + .25 * b.side, radius: 2.3, arc: 1.5, dir: b.side, color: [.3, .9, 1], dur: .3, width: .4, y: 1.2 });
+      if (b.tgt && !b.tgt.dead && dist(b.pos, b.tgt.pos) < 2.9 + b.tgt.r && damageEnemy(b.tgt, 22, { from: b.pos, heavy: true, stop: .07, kb: 2, poise: 12 })) { sfx('hitHeavy'); gainUlt(3); G.shake = Math.max(G.shake, .22); } }
+  } else if (t) {
+    const reach = 1.9 + t.r, a = angTo(b.pos, t.pos); b.yaw = turn(b.yaw, a, dt * 11);
+    if (bd > reach) { go(b.yaw, Math.min(12.5 * dt, bd - reach + .05)); b.body.play('run', { ts: 1.5 }); }
+    else if (b.cd <= 0) { b.tgt = t; b.side = -b.side; b.atk = .55; b.hit = false; b.cd = .9; b.body.play(b.side > 0 ? 'atk1' : 'atk2', { once: true, ts: 1.8, fade: .06 }); sfx('swing'); }
+    else b.body.play('idle');
+  } else { const d = dist(b.pos, P.pos); if (d > 3.2) { b.yaw = turn(b.yaw, angTo(b.pos, P.pos), dt * 9); go(b.yaw, Math.min(9 * dt, d - 2.6)); b.body.play('run', { ts: 1.2 }); } else b.body.play('idle'); }
+  if (Math.random() < dt * 22) fx.p.spawn(b.pos.x + (Math.random() - .5) * 1.4, .3 + Math.random() * 1.2, b.pos.z + (Math.random() - .5) * 1.4, 0, .8, 0, .5, .22, .35, 1.1, 1.3, 0, 1);
+  R0.position.set(b.pos.x, 0, b.pos.z); R0.rotation.y = b.yaw; b.body.update(dt);
+}
+G.beast = () => beast;
 // the sword he rides
 const board = new THREE.Group(); { const bs = swordMesh([.55, 1.7, 1.9], 2.1); bs.rotation.x = -Math.PI / 2; bs.position.z = 1.25; board.add(bs); board.visible = false; scene.add(board); }
 
@@ -313,7 +340,7 @@ const AI = {
   boss(e, dt) {
     const d = dist(e.pos, P.pos), a = angTo(e.pos, P.pos), p2 = e.p2; e.yaw = turn(e.yaw, a, dt * 6);
     if (e.cd > 0) { if (d > 3.4) walk(e, a, e.speed * (p2 ? 1.15 : 1), dt); else { walk(e, a + e.strafe * Math.PI / 2, e.speed * .35, dt); } return; }
-    const opts = []; if (d < 5.2) opts.push(['combo', 3], ['slam', 1]); else opts.push(['slam', 2], ['waves', 2.2], ['combo', d < 8 ? 1 : 0]);
+    const opts = []; if (d < 5.2) opts.push(['combo', 3], ['slam', 1], ['blink', .8]); else opts.push(['slam', 1.6], ['waves', 2], ['blink', 2.2], ['combo', d < 8 ? 1 : 0]);
     if (p2) opts.push(['rain', e.rainCd > 0 ? 0 : 2.4]);
     let tot = 0; for (const o of opts) { if (o[0] === e.last) o[1] *= .25; tot += o[1]; } let r = Math.random() * tot, pick = opts[0][0]; for (const o of opts) { r -= o[1]; if (r <= 0) { pick = o[0]; break; } }
     startSeq(e, BOSS[pick](e), pick);
@@ -323,14 +350,15 @@ const BOSS = {
   combo(e) {
     const f = e.p2 ? .82 : 1, t = { kind: 'fan', radius: 4.4, arc: 2.2, color: AMBER }, k = { range: 4.4, arc: 2.2, dmg: 17, width: .5 };
     const s = [wind(.7 * f, t, { dir: 1 }), strike({ ...k, dir: 1, step: 1.3 }), wind(.48 * f, t, { dir: -1, track: .45 }), strike({ ...k, dir: -1, step: 1.5 }),
-      wind(.62 * f, { kind: 'fan', radius: 5, arc: 1.1, color: AMBER }, { tilt: 1, track: .5 }), strike({ range: 5, arc: 1.1, dmg: 24, dir: -1, tilt: 1.35, step: 1.6, width: .6, dur: .3 }), rest(1.25 * f)];
+      wind(.62 * f, { kind: 'fan', radius: 5, arc: 1.1, color: AMBER }, { tilt: 1, track: .5 }), strike({ range: 5, arc: 1.1, dmg: 24, dir: -1, tilt: 1.35, step: 1.6, width: .6, dur: .3 }),
+      { dur: .05, anim: 'swing', start(b) { const c = fx.crescent({ color: [1.7, .3, .2], radius: 2.4, arc: 1.5 }); G.projs.push({ team: 'e', src: b, pos: b.pos.clone(), yaw: b.yaw, speed: 15, r: 1.2, dmg: 14, life: 1.1, fxh: c, color: CRIM, big: true }); fx.crack({ x: b.pos.x + Math.sin(b.yaw) * 3, z: b.pos.z + Math.cos(b.yaw) * 3 }, 2, CRIM, 2.5); G.shake = Math.max(G.shake, .4); } }, rest(1.2 * f)];
     s.cd = e.p2 ? .5 : .9; return s;
   },
   slam(e) {
     const s = [{ dur: e.p2 ? .9 : 1.05, anim: 'leap',
       start(b) { b.from = b.pos.clone(); b.to = clampToArena(P.pos.clone(), b.r); b.tele = fx.telegraph({ kind: 'circle', pos: b.to, radius: 3.7, dur: this.dur, color: CRIM }); },
       tick(b, p) { if (p > .28) { const u = (p - .28) / .72, q = u * u * (3 - 2 * u); b.pos.lerpVectors(b.from, b.to, q); b.y = Math.sin(u * Math.PI) * 3.4; b.yaw = angTo(b.from, b.to) || b.yaw; } },
-      end(b) { b.y = 0; b.tele = null; fx.ring(b.pos, 5.2, CRIM, .6); fx.crack(b.pos, 3.7, CRIM, 3.5); fx.burst(b.pos, 40, [1.2, .5, .3], 8, 5, .34, .8, .2); G.shake = .7; sfx('boom'); if (P.state !== 'fly' && dist(b.pos, P.pos) < 3.7 + P.r) damagePlayer(26, { from: b.pos, src: b, unblockable: true }); } }, rest(e.p2 ? .9 : 1.25)];
+      end(b) { b.y = 0; b.tele = null; for (let i = 0; i < 8; i++) { const a = i * TAU / 8 + .3; fx.lineSlash({ x: b.pos.x + Math.sin(a) * 2.6, z: b.pos.z + Math.cos(a) * 2.6 }, a, 5, .5, [1.5, .3, .2], .4, .1); if (i % 2) fx.beam({ x: b.pos.x + Math.sin(a) * 3.3, z: b.pos.z + Math.cos(a) * 3.3 }, 6, .3, [.9, .16, .12], .6); } fx.ring(b.pos, 5.2, CRIM, .6); fx.crack(b.pos, 3.7, CRIM, 3.5); fx.burst(b.pos, 40, [1.2, .5, .3], 8, 5, .34, .8, .2); G.shake = .7; sfx('boom'); if (P.state !== 'fly' && dist(b.pos, P.pos) < 3.7 + P.r) damagePlayer(26, { from: b.pos, src: b, unblockable: true }); } }, rest(e.p2 ? .9 : 1.25)];
     s.cd = .8; return s;
   },
   waves(e) {
@@ -341,12 +369,50 @@ const BOSS = {
   },
   rain(e) {
     e.rainCd = 11; const s = [{ dur: 2.5, anim: 'cast',
-      start(b) { fx.ring(b.pos, 3, CRIM, .7); for (let i = 0; i < 7; i++) after(.15 + i * .3, () => { if (b.dead || P.state === 'dead') return; const o = i ? Math.random() * 1.6 : 0, a = Math.random() * TAU, tp = clampToArena(new THREE.Vector3(P.pos.x + Math.sin(a) * o, 0, P.pos.z + Math.cos(a) * o), .2);
+      start(b) { fx.ring(b.pos, 3, CRIM, .7); fx.sigil(b.pos, 4.2, [1.1, .16, .2], 2.6); for (let i = 0; i < 7; i++) after(.15 + i * .3, () => { if (b.dead || P.state === 'dead') return; const o = i ? Math.random() * 1.6 : 0, a = Math.random() * TAU, tp = clampToArena(new THREE.Vector3(P.pos.x + Math.sin(a) * o, 0, P.pos.z + Math.cos(a) * o), .2);
         fx.telegraph({ kind: 'circle', pos: tp, radius: 2.1, dur: .85, color: CRIM }); fx.fallSword(tp, [2, .3, .25], .85, .9);
         after(.85, () => { fx.ring(tp, 3, CRIM, .45); fx.crack(tp, 2.1, CRIM, 2.2); fx.burst(tp, 14, CRIM, 5, 4, .26, .6, .2); G.shake = Math.max(G.shake, .25); sfx('boom'); if (dist(tp, P.pos) < 2.1 + P.r * .5) damagePlayer(16, { from: tp, unblockable: true }); }); }); } }, rest(.7)];
     s.cd = .6; return s;
   },
 };
+// distance from a point to the segment a-b on the ground plane
+const segDist = (p, a, b) => { const vx = b.x - a.x, vz = b.z - a.z, l2 = vx * vx + vz * vz || 1, t = Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.z - a.z) * vz) / l2)); return Math.hypot(p.x - a.x - vx * t, p.z - a.z - vz * t); };
+// flash step: he marks a line through you, then is simply at the other end of it
+BOSS.blink = (e) => {
+  const s = [{ dur: e.p2 ? .5 : .62, anim: 'windup', dir: 1,
+    start(b) { b.yaw = angTo(b.pos, P.pos); const d = Math.min(12, dist(b.pos, P.pos) + 3.2); b.from = b.pos.clone(); b.to = clampToArena(new THREE.Vector3(b.pos.x + Math.sin(b.yaw) * d, 0, b.pos.z + Math.cos(b.yaw) * d), b.r); b.tele = fx.telegraph({ kind: 'line', pos: b.pos, yaw: b.yaw, length: dist(b.from, b.to), width: 2.2, dur: this.dur, color: AMBER }); },
+    end(b) { b.tele = null; const mid = { x: (b.from.x + b.to.x) / 2, z: (b.from.z + b.to.z) / 2 }, L = dist(b.from, b.to);
+      for (let i = 0; i < 5; i++) { const k = i / 4; fx.burst({ x: b.from.x + (b.to.x - b.from.x) * k, z: b.from.z + (b.to.z - b.from.z) * k }, 5, [.9, .12, .12], 2, 2, .3, .5, 1); }
+      b.pos.copy(b.to); fx.lineSlash(mid, b.yaw, L + 2, 1, [2.2, .5, .35], .4, 1.2); fx.lineSlash(mid, b.yaw, L + 2, 2.6, [.4, .05, .06], .6, .1); fx.ring(b.to, 2.6, CRIM, .4); G.shake = Math.max(G.shake, .45); sfx('heavy'); sfx('ring');
+      if (P.state !== 'fly' && P.state !== 'dive' && segDist(P.pos, b.from, b.to) < 1.25 + P.r) damagePlayer(20, { from: b.from, src: b }); b.yaw += Math.PI; } },
+    { dur: .25, anim: 'swing', dir: 1 }, rest(e.p2 ? .7 : .95)];
+  s.cd = .6; return s;
+};
+// His ultimate, once, at 30% health: he takes the centre under a blood moon, four blades of light sweep the whole yard and reverse,
+// swords keep falling on you, and one colossal sword closes it. Then he is spent - the opening to finish him.
+function bossUlt(e) {
+  e.ulted = true; cancelSeq(e); e.stun = 0; e.invuln = true; const drop = (tp, r, dmg, lead, scale) => { fx.telegraph({ kind: 'circle', pos: tp, radius: r, dur: lead, color: CRIM }); fx.fallSword(tp, [2, .3, .25], lead, scale, .7);
+    after(lead, () => { fx.ring(tp, r * 1.4, CRIM, .5); fx.crack(tp, r, CRIM, 2.6); fx.burst(tp, 16, CRIM, 6, 5, .28, .7, .2); G.shake = Math.max(G.shake, r > 3 ? 1 : .28); sfx('boom'); if (dist(tp, P.pos) < r + P.r * .5) damagePlayer(dmg, { from: tp, unblockable: true }); }); };
+  const seq = [
+    { dur: .75, anim: 'leap', start(b) { b.from = b.pos.clone(); sfx('roar'); showBanner('', '「山門既閉，便不該再開。」', 3.4); G.shake = .5; fx.ring(b.pos, 5, CRIM, .6); },
+      tick(b, p) { const q = p * p * (3 - 2 * p); b.pos.set(b.from.x * (1 - q), 0, b.from.z * (1 - q)); b.y = Math.sin(p * Math.PI) * 4; }, end(b) { b.y = 0; b.pos.set(0, 0, 0); fx.ring(b.pos, 7, CRIM, .7); fx.crack(b.pos, 4, CRIM, 9); G.shake = .8; sfx('boom'); const a = angTo(b.pos, P.pos); if (dist(b.pos, P.pos) < 5) P.kb.set(Math.sin(a) * 15, 0, Math.cos(a) * 15); } },
+    { dur: 1.5, anim: 'cast', start(b) { G.bossUlt = true; fx.moon(b.pos, 13.3, [1, .22, .2], 8.6); fx.sigil(b.pos, 13.3, [1.15, .15, .2], 8.6); sfx('ultCharge'); b.sweep = Math.random() * TAU; b.teles = [0, 1, 2, 3].map((k) => fx.telegraph({ kind: 'line', pos: b.pos, yaw: b.sweep + k * Math.PI / 2, length: 13.4, width: 2.4, dur: 5.9, color: CRIM })); },
+      tick(b, p, dt) { b.yaw += dt * 5; if (Math.random() < dt * 30) { const a = Math.random() * TAU, r = 2 + Math.random() * 10; fx.p.spawn(Math.sin(a) * r, .1, Math.cos(a) * r, 0, 2 + Math.random() * 3, 0, .8, .14, 1.6, .2, .2, 0, .5); } } },
+    { dur: 4.4, anim: 'cast',
+      start(b) { b.swT = 0; b.dropT = .5; sfx('heavy'); },
+      tick(b, p, dt) {
+        b.sweep += (p < .5 ? .82 : -1.15) * dt; b.yaw = b.sweep; b.swT -= dt; b.dropT -= dt; const live = b.swT <= 0; if (live) b.swT = .075;
+        for (let k = 0; k < 4; k++) { const th = b.sweep + k * Math.PI / 2; if (b.teles) b.teles[k].set(b.pos, th);
+          if (live) { fx.lineSlash({ x: Math.sin(th) * 6.9, z: Math.cos(th) * 6.9 }, th, 13.4, .75, [1.9, .35, .3], .2, 1.1); const r = 1 + Math.random() * 12; fx.p.spawn(Math.sin(th) * r, 1 + Math.random(), Math.cos(th) * r, 0, 2, 0, .4, .2, 2, .3, .25, 0, 1); }
+          const d = dist(b.pos, P.pos); if (d < 13.6 && (d < 1.4 || Math.abs(angDiff(angTo(b.pos, P.pos), th)) < Math.atan2(.85, d))) damagePlayer(14, { from: { x: P.pos.x - Math.cos(th), z: P.pos.z + Math.sin(th) }, unblockable: true }); }
+        if (b.dropT <= 0) { b.dropT = .62; drop(clampToArena(P.pos.clone(), .2), 2, 13, .8, .9); }
+      }, end(b) { if (b.teles) { b.teles.forEach((t) => t.cancel()); b.teles = null; } } },
+    { dur: 1.35, anim: 'leap', start(b) { b.y = 0; drop(clampToArena(P.pos.clone(), .2), 5.2, 38, 1.35, 3.4); b.fin = P.pos.clone(); sfx('ultCharge'); },
+      end(b) { const c = b.fin; for (let i = 0; i < 10; i++) { const a = i * TAU / 10; fx.beam({ x: c.x + Math.sin(a) * 4.4, z: c.z + Math.cos(a) * 4.4 }, 9, .4, [.9, .15, .12], .8); fx.lineSlash({ x: c.x + Math.sin(a) * 3, z: c.z + Math.cos(a) * 3 }, a, 6, .6, [1.6, .3, .2], .45, .12); } fx.ring(c, 12, [.8, .12, .1], .9); G.flash = .45; G.shock = 1; G.slow = .4; sfx('roar'); } },
+    { dur: .2, anim: 'hurt', end(b) { b.invuln = false; G.bossUlt = false; b.stun = 3.4; b.poise = b.maxPoise; fx.ring(b.pos, 4, GOLD, .6); } },
+  ];
+  seq.cd = .4; startSeq(e, seq, 'ult');
+}
 function breakBoss(e) { cancelSeq(e); e.stun = 2.6; e.poise = e.maxPoise; fx.ring(e.pos, 4, GOLD, .6); G.shake = .5; G.slow = .25; sfx('parry'); }
 function phaseTwo(e) {
   e.p2 = true; cancelSeq(e); e.stun = 0; e.invuln = true; world.setMood(1); R.grade.uniforms.uTint.value.set(.05, 0, 0);
@@ -361,7 +427,7 @@ function damageEnemy(e, dmg, o = {}) {
   e.hp -= dmg; e.hitstop = o.stop ?? .07; e.flash = .14; e.hits++; if (G.time - (e.lastHit || 0) > 1.2) e.chain = 0; e.lastHit = G.time;
   const c = { x: e.pos.x - Math.sin(a) * e.r * .8, y: boss ? 1.5 : 1.1, z: e.pos.z - Math.cos(a) * e.r * .8 };
   fx.sparks(c, a + (o.dir || 0) * 1.1, o.heavy ? 20 : 10, boss ? [2, 1.2, .6] : [1.2, 1.8, 1.1], o.heavy ? 12 : 8, .6);
-  if (boss) { e.poise -= o.poise ?? (o.heavy ? 18 : 6); if (e.poise <= 0 && e.stun <= 0 && !e.invuln) breakBoss(e); if (!e.p2 && e.hp <= e.maxHp * .5 && e.hp > 0) phaseTwo(e); }
+  if (boss) { e.poise -= o.poise ?? (o.heavy ? 18 : 6); if (e.poise <= 0 && e.stun <= 0 && !e.invuln) breakBoss(e); if (!e.p2 && e.hp <= e.maxHp * .5 && e.hp > 0) phaseTwo(e); else if (e.p2 && !e.ulted && e.hp <= e.maxHp * .3 && e.hp > 0 && P.state !== 'ult') bossUlt(e); }
   else if (e.kind === 'melee' && !o.heavy && !o.noChain && !interrupted && ++e.chain >= 3 && e.hp > 0) {      /* third light hit in a row: it shrugs it off and answers */
     e.chain = 0; e.stun = 0; cancelSeq(e); e.yaw = angTo(e.pos, P.pos); fx.ring(e.pos, 1.5, AMBER, .3);
     const s = [wind(.4, { kind: 'fan', radius: 2.9, arc: 2.1, color: AMBER }, { dir: -1, track: .7 }), strike({ range: 2.9, arc: 2.1, dmg: 13, dir: -1, step: .6 }), rest(.8)]; s.cd = 1; startSeq(e, s, 'riposte');
@@ -373,7 +439,7 @@ function damageEnemy(e, dmg, o = {}) {
 function kill(e, a) {
   gainUlt(6); e.dead = true; e.hp = 0; cancelSeq(e); e.kb.set(Math.sin(a) * 9, 0, Math.cos(a) * 9); P.qi = Math.min(100, P.qi + 8); sfx('die');
   if (e.bar) { scene.remove(...e.bar); e.bar = null; }
-  if (e.kind === 'boss') { sfx('roar'); G.slow = 1.2; G.shake = .8; fx.ring(e.pos, 10, GOLD, 1.2); fx.burst(e.pos, 70, CRIM, 9, 7, .35, 1.4); world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); G.projs.forEach((b) => { if (b.team === 'e') b.life = 0; }); after(2.6, () => setMode('win')); }
+  if (e.kind === 'boss') { G.bossUlt = false; sfx('roar'); G.slow = 1.2; G.shake = .8; fx.ring(e.pos, 10, GOLD, 1.2); fx.burst(e.pos, 70, CRIM, 9, 7, .35, 1.4); world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); G.projs.forEach((b) => { if (b.team === 'e') b.life = 0; }); after(2.6, () => setMode('win')); }
   else fx.burst(e.pos, 22, [.2, .5, .22], 3, 3, .4, .9);
 }
 function updateEnemy(e, dt) {
@@ -429,8 +495,8 @@ function startBoss() {
   showBanner('厲無咎', '守在這裡的，是當年親手關上山門的人。', 3.6);
 }
 function startGame(stage) {
-  clearField(); Object.assign(P, { orbitT: 0, cdF: 0, cdC: 0, lean: 0, ult: Q.has('ult') ? 100 : 0, hp: P.maxHp, st: 100, qi: 30, state: 'idle', hidden: false, t: 0, hitstop: 0, iframe: 1, buf: null, counterT: 0, cdQ: 0, cdE: 0, yaw: Math.PI, y: 0 }); P.pos.set(0, 0, 7); P.kb.set(0, 0, 0);
-  world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); $('boss').classList.remove('on'); G.slow = 0; G.intro = 0; setMode('play');
+  clearField(); Object.assign(P, { orbitT: 0, cdF: 0, cdC: 0, cdV: 0, lean: 0, ult: Q.has('ult') ? 100 : 0, hp: P.maxHp, st: 100, qi: 30, state: 'idle', hidden: false, t: 0, hitstop: 0, iframe: 1, buf: null, counterT: 0, cdQ: 0, cdE: 0, yaw: Math.PI, y: 0 }); P.pos.set(0, 0, 7); P.kb.set(0, 0, 0);
+  G.bossUlt = false; if (beast) beast.on = false; world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); $('boss').classList.remove('on'); G.slow = 0; G.intro = 0; setMode('play');
   if (stage === 'boss') startBoss(); else { G.phase = 'wave'; startWave(); }
 }
 G.start = startGame;
@@ -453,16 +519,17 @@ function updateCamera(dt) {
   G.focus.lerp(ft, 1 - Math.exp(-dt * (G.intro > 0 ? 2.2 : 5))); G.shake = Math.max(0, G.shake - dt * 1.8);
   const ulting = P.state === 'ult' && G.mode === 'play', zt = !ulting ? (P.state === 'fly' && G.mode === 'play' ? 1.1 : 1) : P.t < ULT.cut ? .82 : P.t < ULT.fin ? .94 : 1.18; G.zoom += (zt - G.zoom) * (1 - Math.exp(-dt * (zt > 1 ? 14 : 3.5)));
   const s = G.shake * G.shake * 1.6; camera.position.set(G.focus.x + CAM.x * G.zoom + (Math.random() - .5) * s, CAM.y * G.zoom + (Math.random() - .5) * s, G.focus.z + CAM.z * G.zoom + (Math.random() - .5) * s * .5);
-  G.flash = Math.max(0, G.flash - dt * 3.4); const gu = R.grade.uniforms; gu.uFlash.value = G.flash * G.flash; gu.uExposure.value += ((ulting && P.t < ULT.fin ? (P.t < ULT.cut ? .56 : .34) : 1.15) - gu.uExposure.value) * (1 - Math.exp(-dt * (ulting && P.t >= ULT.cut ? 22 : 6)));
+  G.flash = Math.max(0, G.flash - dt * 3.4); const gu = R.grade.uniforms; gu.uFlash.value = G.flash * G.flash; gu.uExposure.value += ((ulting && P.t < ULT.fin ? (P.t < ULT.cut ? .56 : .34) : G.bossUlt ? .8 : 1.15) - gu.uExposure.value) * (1 - Math.exp(-dt * (ulting && P.t >= ULT.cut ? 22 : 6)));
   G.shock = Math.max(0, G.shock - dt * 2.2); gu.uShock.value = G.shock; gu.uMono.value += ((ulting && P.t >= ULT.cut - .04 && P.t < ULT.fin ? 1 : 0) - gu.uMono.value) * (1 - Math.exp(-dt * 30));
 }
 const W = (el, v) => { el.style.width = (Math.max(0, Math.min(1, v)) * 100).toFixed(1) + '%'; };
-const hud = { hp: $('hp').children, st: $('st').children, qi: $('qi').children, bhp: $('bhp').children, bpo: $('bpo').children, hurt: $('hurt'), counter: $('counter'), sq: $('s-q'), sf: $('s-f'), sc: $('s-c'), sfl: $('s-fly'), ur: $('s-r-ring'), se: $('s-e'), sd: $('s-dge'), sb: $('s-blk') };
+const hud = { hp: $('hp').children, st: $('st').children, qi: $('qi').children, bhp: $('bhp').children, bpo: $('bpo').children, hurt: $('hurt'), counter: $('counter'), sq: $('s-q'), sf: $('s-f'), sc: $('s-c'), sv: $('s-v'), sfl: $('s-fly'), ur: $('s-r-ring'), se: $('s-e'), sd: $('s-dge'), sb: $('s-blk') };
 function updateHud(dt) {
   W(hud.hp[0], P.hp / P.maxHp); W(hud.hp[1], P.hp / P.maxHp); W(hud.st[0], P.st / 100); W(hud.qi[0], P.qi / 100);
   const b = G.boss; if (b) { W(hud.bhp[0], b.hp / b.maxHp); W(hud.bhp[1], b.hp / b.maxHp); W(hud.bpo[0], b.poise / b.maxPoise); }
   G.hurtFlash = Math.max(0, (G.hurtFlash || 0) - dt * 2.2); hud.hurt.style.opacity = (G.hurtFlash * .7 + (P.hp < 30 && P.state !== 'dead' ? .18 + .1 * Math.sin(G.time * 6) : 0)).toFixed(2);
   hud.counter.classList.toggle('on', P.counterT > 0 && G.mode === 'play');
+  hud.sv.classList.toggle('dim', P.qi < 45 || !GL.beast); hud.sv.lastElementChild.style.height = (P.cdV / 20 * 100) + '%';
   hud.sf.classList.toggle('dim', P.qi < 30); hud.sf.lastElementChild.style.height = (P.cdF / 6 * 100) + '%'; hud.sc.classList.toggle('dim', P.qi < 35 && P.orbitT <= 0); hud.sc.lastElementChild.style.height = (P.cdC / 12 * 100) + '%'; hud.sfl.classList.toggle('dim', P.qi < 8 && P.state !== 'fly'); hud.sfl.classList.toggle('active', P.state === 'fly');
   hud.sq.classList.toggle('dim', P.qi < 25); hud.sq.lastElementChild.style.height = (P.cdQ / 3.5 * 100) + '%';
   hud.se.classList.toggle('dim', P.qi < 50); hud.se.lastElementChild.style.height = (P.cdE / 8 * 100) + '%';
@@ -483,10 +550,10 @@ function update(dt) {
   if (G.mode === 'play') {
     updateAim(); G.tokenCd = Math.max(0, G.tokenCd - dt);
     for (let i = G.timers.length - 1; i >= 0; i--) { const t = G.timers[i]; t.t -= dt; if (t.t <= 0) { G.timers.splice(i, 1); t.fn(); } }
-    updatePlayer(dt); updateOrbit(dt); const frozen = P.state === 'ult' && P.t < ULT.fin;
+    updatePlayer(dt); updateOrbit(dt); updateBeast(dt); const frozen = P.state === 'ult' && P.t < ULT.fin;
     for (const e of [...G.enemies]) { if (frozen && !e.dead) { e.flash = Math.max(0, e.flash - dt); e.hitstop = Math.max(0, e.hitstop - dt); if (e.kb.lengthSq() > .02) { move(e, e.kb.x * dt, e.kb.z * dt); e.kb.multiplyScalar(Math.exp(-8 * dt)); } e.anim = 'hurt'; continue; } updateEnemy(e, dt); }
     separate(); if (!frozen) updateProjs(dt); flow(dt);
-  } else P.anim = P.state === 'dead' ? 'dead' : 'idle';
+  } else { P.anim = P.state === 'dead' ? 'dead' : 'idle'; updateBeast(dt); }
   place(P, dt); for (const e of G.enemies) place(e, dt);
   board.visible = G.mode === 'play' && (P.state === 'fly' || P.state === 'dive'); if (board.visible) { board.position.set(P.pos.x, (P.y || 0) - .04, P.pos.z); board.rotation.order = 'YXZ'; board.rotation.set(-(P.lean || 0) * .6, P.yaw, 0); }
   if (Math.random() < dt * 5) { const L = world.lanterns[Math.random() * 4 | 0].l.position; fx.p.spawn(L.x, 1.7, L.z, (Math.random() - .5) * .5, .7 + Math.random(), (Math.random() - .5) * .5, 1.6, .09, 2, .8, .25, -.3, .6); }

@@ -7,13 +7,15 @@
     "boss": "450b9de4-5855-46ff-a6da-a17af31d50b5",
     "w_jian": "4fb774eb-8de7-499d-b7fa-44ddd9bf44ba",
     "w_dao": "a1cd191d-3a41-4ce9-804b-5e088ce925c7",
-    "w_great": "c64160fe-a5bf-4c5b-9467-78eaafbb84ce"
+    "w_great": "c64160fe-a5bf-4c5b-9467-78eaafbb84ce",
+    "beast": "a45461d2-94ac-4fff-bb61-15dc6dba0a7e"
   },
   "rigged": {
     "player": "0b1bcb3b-84bc-4b5a-983a-70c4ca9c7577",
     "melee": "cf694d54-81f7-4e14-93b0-7aa329563521",
     "ranged": "9f8f61ec-7fa1-4891-a42e-8a1fa768bad5",
-    "boss": "3453d68f-4ef5-4226-9969-51bb398bf3a1"
+    "boss": "3453d68f-4ef5-4226-9969-51bb398bf3a1",
+    "beast": "48b2285d-2d2e-4a57-bf2a-c0069f77e3b6"
   },
   "props": {
     "lantern": "0f28fda4-539f-4836-9996-f4bf2dfd6435",
