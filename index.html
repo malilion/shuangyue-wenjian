@@ -32,11 +32,17 @@
   #bpo { height: 3px; width: 46%; margin: 5px auto 0; } #bpo .fill { background: #e2c88a; } #bpo::after { display: none; }
 
   #skills { position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%); display: flex; gap: 12px; }
-  .slot { position: relative; width: 54px; height: 54px; border: 1px solid rgba(225, 235, 240, .4); background: radial-gradient(circle at 50% 35%, rgba(60, 90, 100, .55), rgba(6, 10, 14, .85)); transform: rotate(45deg); overflow: hidden; }
-  .slot b { position: absolute; inset: 0; display: grid; place-items: center; transform: rotate(-45deg); font-size: 25px; font-weight: 400; color: #dff6f6; text-shadow: 0 0 10px rgba(127, 227, 230, .7); }
-  .slot .cd { position: absolute; left: -30%; right: -30%; bottom: -30%; height: 0; background: rgba(0, 0, 0, .72); transform: rotate(-45deg); transform-origin: 50% 100%; }
-  .slot.dim b { color: #6b777b; text-shadow: none; }
-  .slotw { position: relative; width: 60px; height: 78px; display: grid; justify-items: center; }
+  .slot { position: relative; width: 58px; height: 58px; border-radius: 50%; border: 1px solid rgba(225, 235, 240, .45); background: radial-gradient(circle at 50% 35%, rgba(60, 90, 100, .55), rgba(6, 10, 14, .85)); overflow: hidden; box-shadow: 0 0 14px rgba(0, 0, 0, .6); }
+  .slot b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 25px; font-weight: 400; color: #dff6f6; text-shadow: 0 0 10px rgba(127, 227, 230, .7); }
+  .slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .slot .cd { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(0, 0, 0, .72); }
+  .slot.dim b { color: #6b777b; text-shadow: none; } .slot.dim img { filter: grayscale(1) brightness(.45); }
+  .slotw { position: relative; width: 62px; height: 80px; display: grid; justify-items: center; }
+  .slotw.ult { width: 78px; margin-left: 10px; } .slotw.ult .slot { width: 66px; height: 66px; margin-top: -4px; } .slotw.ult .slot b { color: #f3e2ad; text-shadow: 0 0 10px rgba(226, 200, 138, .8); }
+  .charge { position: absolute; left: 50%; top: -9px; width: 76px; height: 76px; margin-left: -38px; border-radius: 50%; background: conic-gradient(#e9d49a var(--p, 0%), rgba(255, 255, 255, .1) 0); -webkit-mask: radial-gradient(circle, transparent 34px, #000 35px); mask: radial-gradient(circle, transparent 34px, #000 35px); }
+  .slotw.ult.ready .charge { background: conic-gradient(#fff3c4 100%, transparent 0); animation: ultpulse 1s ease-in-out infinite; } .slotw.ult.ready .slot { box-shadow: 0 0 22px rgba(240, 215, 140, .75); }
+  .slotw.ult:not(.ready) .slot img { filter: grayscale(.85) brightness(.55); } .slotw.ult:not(.ready) .slot b { color: #7d7868; text-shadow: none; }
+  @keyframes ultpulse { 50% { filter: brightness(1.6) drop-shadow(0 0 8px #f6dc92); } }
   .slotw em { position: absolute; bottom: -4px; font: 11px/1 ui-monospace, Menlo, monospace; font-style: normal; letter-spacing: .08em; opacity: .7; }
 
   #counter { position: absolute; left: 50%; bottom: 138px; transform: translateX(-50%); font-size: 17px; letter-spacing: .5em; color: var(--gold); text-shadow: 0 0 14px rgba(226, 200, 138, .9); opacity: 0; transition: opacity .1s; }
@@ -51,6 +57,8 @@
   .screen.on { display: grid; }
   .screen h1 { margin: 0; font-size: clamp(60px, 10vw, 128px); font-weight: 400; letter-spacing: .28em; text-indent: .28em; text-shadow: 0 0 40px rgba(127, 227, 230, .35), 0 4px 30px #000; }
   .screen h1.small { font-size: 64px; }
+  .screen h1 img { display: none; width: min(880px, 78vw); filter: drop-shadow(0 0 26px rgba(127, 227, 230, .35)) drop-shadow(0 6px 22px #000); }
+  .screen h1.img { letter-spacing: 0; text-indent: 0; font-size: 0; line-height: 0; } .screen h1.img span { display: none; } .screen h1.img img { display: inline-block; }
   .screen .sub { font-size: 17px; letter-spacing: .6em; text-indent: .6em; opacity: .75; margin-top: 10px; }
   .screen .go { margin-top: 54px; font-size: 19px; letter-spacing: .55em; text-indent: .55em; color: var(--teal); animation: breathe 2.2s ease-in-out infinite; }
   .screen .keys { margin-top: 38px; font-size: 14px; letter-spacing: .2em; line-height: 2; opacity: .72; }
@@ -77,23 +85,24 @@
   <div id="banner"><h2></h2><p></p></div>
   <div id="counter">破綻 · 左鍵</div>
   <div id="skills">
-    <div class="slotw"><div class="slot" id="s-atk"><b>斬</b><div class="cd"></div></div><em>左鍵</em></div>
-    <div class="slotw"><div class="slot" id="s-blk"><b>架</b><div class="cd"></div></div><em>右鍵</em></div>
-    <div class="slotw"><div class="slot" id="s-dge"><b>閃</b><div class="cd"></div></div><em>空白</em></div>
-    <div class="slotw"><div class="slot" id="s-q"><b>氣</b><div class="cd"></div></div><em>Q</em></div>
-    <div class="slotw"><div class="slot" id="s-e"><b>落</b><div class="cd"></div></div><em>E</em></div>
+    <div class="slotw"><div class="slot" id="s-atk"><b>斬</b><img src="assets/ui/icon_atk.png" alt="" onerror="this.remove()"><div class="cd"></div></div><em>左鍵</em></div>
+    <div class="slotw"><div class="slot" id="s-blk"><b>架</b><img src="assets/ui/icon_blk.png" alt="" onerror="this.remove()"><div class="cd"></div></div><em>右鍵</em></div>
+    <div class="slotw"><div class="slot" id="s-dge"><b>閃</b><img src="assets/ui/icon_dge.png" alt="" onerror="this.remove()"><div class="cd"></div></div><em>空白</em></div>
+    <div class="slotw"><div class="slot" id="s-q"><b>氣</b><img src="assets/ui/icon_q.png" alt="" onerror="this.remove()"><div class="cd"></div></div><em>Q</em></div>
+    <div class="slotw"><div class="slot" id="s-e"><b>落</b><img src="assets/ui/icon_e.png" alt="" onerror="this.remove()"><div class="cd"></div></div><em>E</em></div>
+    <div class="slotw ult"><div class="charge" id="s-r-ring"></div><div class="slot" id="s-r"><b>絕</b><img src="assets/ui/icon_r.png" alt="" onerror="this.remove()"></div><em>R</em></div>
   </div>
 </div>
 <div id="hurt"></div>
 
 <div class="screen on" id="title">
   <div>
-    <h1>霜月問劍</h1>
+    <h1><span>霜月問劍</span><img src="assets/ui/title.png" alt="霜月問劍" onload="this.parentNode.classList.add('img')" onerror="this.remove()"></h1>
     <div class="sub">廢棄山門 · 演武台</div>
     <div class="go" id="go">載入中</div>
     <div class="keys">
       <kbd>W A S D</kbd>移動<kbd>左鍵</kbd>三段斬<kbd>右鍵</kbd>格擋，剛舉劍時接住即彈反<br>
-      <kbd>空白</kbd>閃避<kbd>Q</kbd>劍氣<kbd>E</kbd>落劍<kbd>F3</kbd>除錯面板
+      <kbd>空白</kbd>閃避<kbd>Q</kbd>劍氣<kbd>E</kbd>落劍<kbd>R</kbd>劍意滿時放大招<kbd>F3</kbd>除錯面板
     </div>
   </div>
 </div>

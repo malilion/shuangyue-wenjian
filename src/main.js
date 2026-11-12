@@ -5,7 +5,7 @@ import { createRender } from './render.js';
 import { buildWorld, clampToArena, ARENA_R } from './world.js';
 import { FX } from './fx.js';
 import { makeBody, poseBody } from './body.js';
-import { initAudio, sfx } from './audio.js';
+import { initAudio, sfx, music, musicState } from './audio.js';
 import { loadGLB, makeCharBody } from './chars.js';
 
 const Q = new URLSearchParams(location.search), $ = (id) => document.getElementById(id);
@@ -23,7 +23,7 @@ const inFan = (src, yaw, tgt, range, arc, pad = 0) => { const d = dist(src, tgt)
 const move = (a, dx, dz) => { a.pos.x += dx; a.pos.z += dz; clampToArena(a.pos, a.r); };
 const TEAL = [.4, 1.25, 1.4], AMBER = [1.6, .62, .16], CRIM = [1.7, .16, .22], GOLD = [1.8, 1.3, .55];
 
-const G = window.G = { mode: 'title', phase: 'wave', time: 0, shake: 0, slow: 0, token: null, tokenCd: 0, enemies: [], projs: [], timers: [], boss: null, god: Q.has('god'), fx, focus: new THREE.Vector3(0, 0, 3), intro: 0 };
+const G = window.G = { mode: 'title', phase: 'wave', time: 0, shake: 0, slow: 0, token: null, tokenCd: 0, enemies: [], projs: [], timers: [], boss: null, god: Q.has('god'), zoom: 1, flash: 0, shock: 0, fx, focus: new THREE.Vector3(0, 0, 3), intro: 0 };
 const after = (t, fn) => G.timers.push({ t, fn });
 
 // ---------- generated characters (fall back to the stand-in bodies when a file is missing) ----------
@@ -46,7 +46,7 @@ const ATK = [
 ];
 const P = G.player = {
   pos: new THREE.Vector3(0, 0, 7), yaw: Math.PI, r: .45, hp: 120, maxHp: 120, st: 100, qi: 30, state: 'idle', t: 0, dur: 0, combo: 0, hitstop: 0, iframe: 0,
-  buf: null, bufT: 0, parryT: 9, counterT: 0, counterFrom: null, cdQ: 0, cdE: 0, kb: new THREE.Vector3(), anim: 'idle', animP: 0, phase: 0, idleT: 0, y: 0,
+  ult: Q.has('ult') ? 100 : 0, buf: null, bufT: 0, parryT: 9, counterT: 0, counterFrom: null, cdQ: 0, cdE: 0, kb: new THREE.Vector3(), anim: 'idle', animP: 0, phase: 0, idleT: 0, y: 0,
   body: bodyFor('player', { h: 1.75, robe: 0xdde6e8, trim: 0x2b7480, skin: 0xd8b99b, dark: 0x1c2230, bun: true, weapon: { len: 1.15, w: .05, color: 0xcfe9ee, glow: 0x0c3a40 } }),
 };
 scene.add(P.body.root);
@@ -80,21 +80,22 @@ function playerHit(A, yaw, target) {
   let any = false; const o = { from: P.pos, heavy: A.heavy, stop: A.stop, kb: A.kb, dir: A.dir, poise: A.poise };
   for (const e of [...G.enemies]) if (!e.dead && (e === target || inFan(P.pos, yaw, e.pos, A.range, A.arc, e.r))) any = damageEnemy(e, A.dmg, o) || any;
   for (const b of G.projs) if (b.team === 'e' && b.cut && inFan(P.pos, yaw, b.pos, A.range, A.arc, .3)) { b.life = 0; fx.sparks({ x: b.pos.x, y: 1.1, z: b.pos.z }, yaw, 14, CRIM, 7, 1.6); any = true; P.qi = Math.min(100, P.qi + 4); }
-  if (any) { P.hitstop = A.stop; G.shake = Math.max(G.shake, A.heavy ? .32 : .12); P.qi = Math.min(100, P.qi + 3); sfx(A.heavy ? 'hitHeavy' : 'hit'); }
+  if (any) { P.hitstop = A.stop; G.shake = Math.max(G.shake, A.heavy ? .32 : .12); P.qi = Math.min(100, P.qi + 3); gainUlt(A.heavy ? 8 : 5); sfx(A.heavy ? 'hitHeavy' : 'hit'); }
 }
 
 function updatePlayer(dt) {
   const B = P.body; P.idleT += dt;
   if (P.state === 'dead') { P.t += dt; P.anim = 'dead'; P.animP = P.t / .7; return; }
-  if (pressed.has('LMB')) setBuf('atk'); if (pressed.has('Space')) setBuf('dodge'); if (pressed.has('KeyQ')) setBuf('q'); if (pressed.has('KeyE')) setBuf('e');
+  if (pressed.has('LMB')) setBuf('atk'); if (pressed.has('Space')) setBuf('dodge'); if (pressed.has('KeyQ')) setBuf('q'); if (pressed.has('KeyE')) setBuf('e'); if (pressed.has('KeyR')) setBuf('r');
   P.bufT -= dt; if (P.bufT <= 0) P.buf = null;
   P.iframe = Math.max(0, P.iframe - dt); P.cdQ = Math.max(0, P.cdQ - dt); P.cdE = Math.max(0, P.cdE - dt); P.counterT = Math.max(0, P.counterT - dt);
   const mx = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), mz = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0), ml = Math.hypot(mx, mz), aimYaw = angTo(P.pos, aim);
-  if (P.buf === 'dodge' && P.st >= 18 && P.state !== 'hurt' && P.state !== 'counter' && P.state !== 'dodge') startDodge(mx, mz);     // dodge cuts through everything, hitstop included
+  if (P.buf === 'dodge' && P.st >= 18 && P.state !== 'hurt' && P.state !== 'counter' && P.state !== 'dodge' && P.state !== 'ult') startDodge(mx, mz);     // dodge cuts through everything, hitstop included
   if (P.hitstop > 0) { P.hitstop -= dt; return; }
   if (P.kb.lengthSq() > .02) { move(P, P.kb.x * dt, P.kb.z * dt); P.kb.multiplyScalar(Math.exp(-9 * dt)); }
   const regen = (k) => { P.st = Math.min(100, P.st + k * dt); };
   const tryActions = () => {
+    if (P.buf === 'r' && P.ult >= 100) { startUlt(); return true; }
     if (P.buf === 'atk') { P.buf = null; if (P.counterT > 0 && P.counterFrom && !P.counterFrom.dead) startCounter(); else startAttack(0); return true; }
     if (P.buf === 'q' && P.cdQ <= 0 && P.qi >= 25) { P.buf = null; P.qi -= 25; P.cdQ = 3.5; P.state = 'skill'; P.skill = 'q'; P.t = 0; P.hitDone = false; P.yaw = aimYaw; sfx('cast'); return true; }
     if (P.buf === 'e' && P.cdE <= 0 && P.qi >= 50) { P.buf = null; P.qi -= 50; P.cdE = 8; P.state = 'skill'; P.skill = 'e'; P.t = 0; P.hitDone = false; P.yaw = aimYaw; sfx('cast'); return true; }
@@ -115,7 +116,7 @@ function updatePlayer(dt) {
         if (!P.hitDone) { P.hitDone = true; fx.slash({ pos: P.pos, yaw: P.yaw, radius: A.range, arc: A.heavy ? 2.6 : A.arc, dir: A.dir, tilt: A.tilt, dur: A.heavy ? .36 : .28, color: TEAL, width: A.heavy ? .6 : .5 }); playerHit(A, P.yaw); if (A.heavy) { const f = { x: P.pos.x + Math.sin(P.yaw) * 2.2, z: P.pos.z + Math.cos(P.yaw) * 2.2 }; fx.ring(f, 1.8, TEAL, .4); fx.crack(f, 1.3, TEAL, 1.6); } }
       }
       if (P.t >= A.cancel && P.buf === 'atk' && P.combo < 2) { P.buf = null; startAttack(P.combo + 1); break; }
-      if (P.t >= A.cancel && (P.buf === 'q' || P.buf === 'e')) { P.state = 'idle'; tryActions(); break; }
+      if (P.t >= A.cancel && (P.buf === 'q' || P.buf === 'e' || (P.buf === 'r' && P.ult >= 100))) { P.state = 'idle'; tryActions(); break; }
       if (P.t >= A.dur) P.state = 'idle';
       regen(12); break; }
     case 'counter':
@@ -125,9 +126,24 @@ function updatePlayer(dt) {
     case 'dodge': { P.t += dt; const p = P.t / .42; move(P, P.dx * 15 * (1 - p * .78) * dt, P.dz * 15 * (1 - p * .78) * dt); P.anim = 'dodge'; P.animP = p; if (p >= 1) P.state = 'idle'; break; }
     case 'block':
       P.parryT += dt; P.yaw = turn(P.yaw, aimYaw, dt * 16); P.anim = 'block'; if (ml > 0) move(P, mx / ml * 2.2 * dt, mz / ml * 2.2 * dt);
-      if (P.buf === 'atk' || P.buf === 'q' || P.buf === 'e') { P.state = 'idle'; tryActions(); break; }
+      if (P.buf === 'atk' || P.buf === 'q' || P.buf === 'e' || (P.buf === 'r' && P.ult >= 100)) { P.state = 'idle'; tryActions(); break; }
       if (!keys.has('RMB')) P.state = 'idle'; regen(8); break;
     case 'hurt': P.t += dt; P.anim = 'hurt'; if (P.t >= P.dur) P.state = 'idle'; break;
+    case 'ult': {
+      P.t += dt; const t = P.t, up = Math.min(1, t / .55), k = up * up * (3 - 2 * up); P.hidden = t >= ULT.cut && t < ULT.fin - .07;
+      if (t < ULT.fin - .1) { P.y = .95 * k + Math.sin(t * 4) * .04; P.anim = 'leap'; P.animP = up; if (Math.random() < dt * 60) { const a = Math.random() * TAU, r = 1 + Math.random() * 8; fx.p.spawn(P.ultC.x + Math.sin(a) * r, .1, P.ultC.z + Math.cos(a) * r, 0, 2.5 + Math.random() * 3.5, 0, .8, .13, .4, 1.2, 1.4, 0, .5); } }
+      else { const q = Math.min(1, (t - ULT.fin + .1) / .1); P.y = .95 * (1 - q); P.swingDir = 1; P.tilt = 0; P.anim = t < ULT.fin ? 'windup' : 'swing'; P.animP = t < ULT.fin ? q : (t - ULT.fin) / .2; if (t >= ULT.fin) { const sp = Math.min(1, (t - ULT.fin) / .32); P.yaw = P.ultYaw + TAU * (1 - Math.pow(1 - sp, 3)); } }
+      if (t >= ULT.fin && !P.finDone) {       /* the full-moon cut that closes it: every planted sword answers with a pillar of light */
+        P.finDone = true; const c = P.ultC;
+        fx.slash({ pos: c, yaw: P.ultYaw, radius: 10.5, arc: TAU, dir: 1, dur: .65, color: [.22, .6, .72], width: .2 }); fx.slash({ pos: c, yaw: P.ultYaw + 2, radius: 6.8, arc: TAU, dir: -1, dur: .5, color: [.6, .5, .28], width: .26, y: 1.3 });
+        fx.slash({ pos: c, yaw: P.ultYaw + 4, radius: 13.5, arc: TAU, dir: 1, dur: .8, color: [.16, .42, .5], width: .12, y: .6 });
+        fx.ring(c, 13, [.18, .45, .55], .75); fx.ring(c, 7, [.5, .38, .16], .5, .12); fx.ring(c, 16, [.08, .2, .26], 1.1); fx.crack(c, 5, [.25, .7, .8], 4); fx.burst(c, 80, [.3, .9, 1], 13, 7, .24, 1.2, .4);
+        P.pins.forEach((pin, i) => after(i * .012, () => { fx.beam(pin, 8 + Math.random() * 4, .4, [.15, .42, .5], .7); fx.burst(pin, 5, [.3, .9, 1], 4, 6, .2, .6, .3); }));
+        fx.beam(c, 15, 1.1, [.1, .26, .32], .9); G.flash = .42; G.shock = 1; G.shake = 1.1; G.slow = .55; sfx('boom'); sfx('parry'); sfx('heavy'); sfx('roar');
+        for (const e of [...G.enemies]) if (!e.dead && dist(c, e.pos) < 10.5 + e.r) damageEnemy(e, 80, { from: c, heavy: true, stop: .2, kb: 4.5, poise: 45 });
+      }
+      if (t >= ULT.end) { P.state = 'idle'; P.y = 0; P.hidden = false; P.iframe = Math.max(P.iframe, .4); }
+      break; }
     case 'skill':
       P.t += dt; P.anim = 'cast'; P.animP = P.t / .2;
       if (P.t >= .16 && !P.hitDone) {
@@ -140,15 +156,41 @@ function updatePlayer(dt) {
   }
 }
 
+// ---------- ultimate: rune circle and a halo of swords (charge) -> fourteen swords nail the enemies (burst) -> one full-moon cut (finish)
+const ULT = { charge: .85, gap: .05, n: 22, cut: 2.1, cuts: 8, cutGap: .045, fin: 2.52, end: 3.3 };
+const gainUlt = (v) => { if (P.state !== 'ult') P.ult = Math.min(100, P.ult + v); };
+const ICE = [.25, .8, .9];
+function startUlt() {
+  P.buf = null; P.ult = 0; P.state = 'ult'; P.t = 0; P.finDone = false; P.iframe = ULT.end + .4; P.hitstop = 0; P.kb.set(0, 0, 0); P.counterT = 0; P.ultYaw = P.yaw; P.pins = []; const c = P.ultC = P.pos.clone();
+  for (const e of G.enemies) if (!e.dead) { cancelSeq(e); e.stun = Math.max(e.stun, .35); }                /* everything they were doing is cut off */
+  for (const b of G.projs) if (b.team === 'e') b.life = 0;
+  fx.moon(c, 9.3, [.8, .9, 1], ULT.end + .4); fx.sigil(c, 9.5, [.32, 1.05, 1.25], ULT.end + .5); fx.ring(c, 5, ICE, .55); fx.ring(c, 9, [.15, .45, .55], .8); sfx('ultCharge'); G.shake = .3;
+  const rel = (i) => ULT.charge + i * ULT.gap - .14;                                                         /* two rings of swords turning against each other */
+  fx.swordHalo({ pos: c, n: 12, radius: 2.5, y: 4.7, appear: .6, release: Array.from({ length: 12 }, (_, i) => rel(i * 2)) });
+  fx.swordHalo({ pos: c, n: 10, radius: 4.3, y: 3.5, appear: .7, spin: -.75, release: Array.from({ length: 10 }, (_, i) => rel(i * 2 + 1)) });
+  for (let i = 0; i < ULT.n; i++) after(ULT.charge + i * ULT.gap - .16, () => {
+    const L = alive().filter((e) => dist(c, e.pos) < 11), tgt = L.length && i % 3 !== 2 ? L[i % L.length] : null, a = Math.random() * TAU, o = tgt ? Math.random() * .7 : 2 + Math.random() * 6;
+    const tp = clampToArena(new THREE.Vector3((tgt ? tgt.pos.x : c.x) + Math.sin(a) * o, 0, (tgt ? tgt.pos.z : c.z) + Math.cos(a) * o), .2); P.pins.push(tp);
+    fx.fallSword(tp, [.5, 1.7, 1.9], .16, .9, ULT.fin - P.t - .1);                                           /* it stays planted until the final cut */
+    after(.16, () => { fx.ring(tp, 2.3, ICE, .32); fx.sparks({ x: tp.x, y: .5, z: tp.z }, Math.random() * TAU, 9, TEAL, 8, 3.2); G.shake = Math.max(G.shake, .24); sfx('hit'); sfx('ultHit');
+      for (const e of [...G.enemies]) if (!e.dead && dist(tp, e.pos) < 1.7 + e.r) damageEnemy(e, 13, { from: { x: tp.x - Math.sin(a), z: tp.z - Math.cos(a) }, heavy: true, stop: .05, kb: .3, poise: 4 }); });
+  });
+  for (let j = 0; j < ULT.cuts; j++) after(ULT.cut + j * ULT.cutGap, () => {                                /* the unseen cuts: he is gone, only lines of light cross the yard */
+    const yaw = j * 2.4 + Math.random() * .5, o = Math.random() * 3, a = Math.random() * TAU, mid = { x: c.x + Math.sin(a) * o, z: c.z + Math.cos(a) * o };
+    fx.lineSlash(mid, yaw, 21, .6, [1.6, 2.4, 2.6], .34); fx.lineSlash(mid, yaw, 21, 1.6, [.1, .3, .36], .5, .08); G.shake = Math.max(G.shake, .36); sfx('swing'); sfx('ultHit');
+    for (const e of [...G.enemies]) if (!e.dead && dist(c, e.pos) < 10.5 + e.r) damageEnemy(e, 5, { from: mid, heavy: true, stop: .03, kb: .2, poise: 2, dir: j % 2 ? 1 : -1 });
+  });
+}
+
 // Something hits the player. o: { from, src (attacker), unblockable, proj }. Returns 'hit' | 'block' | 'parry' | 'miss'.
 function damagePlayer(dmg, o) {
   if (P.state === 'dead') return 'miss';
-  if (P.iframe > 0) { if (P.state === 'dodge' && !P.perfect) { P.perfect = true; P.qi = Math.min(100, P.qi + 12); P.st = Math.min(100, P.st + 18); G.slow = .16; fx.ring(P.pos, 1.8, TEAL, .35); } return 'miss'; }
+  if (P.iframe > 0) { if (P.state === 'dodge' && !P.perfect) { P.perfect = true; gainUlt(8); P.qi = Math.min(100, P.qi + 12); P.st = Math.min(100, P.st + 18); G.slow = .16; fx.ring(P.pos, 1.8, TEAL, .35); } return 'miss'; }
   const a = angTo(P.pos, o.from);
   if (P.state === 'block' && !o.unblockable && Math.abs(angDiff(a, P.yaw)) < 1.75) {
     const c = { x: P.pos.x + Math.sin(a) * .7, y: 1.2, z: P.pos.z + Math.cos(a) * .7 };
     if (P.parryT < .24) {
-      fx.sparks(c, a, 26, GOLD, 11, 1.4); fx.ring(P.pos, 2.4, GOLD, .4); sfx('parry'); G.shake = .22; G.slow = .12; P.qi = Math.min(100, P.qi + 18); P.hitstop = .08;
+      fx.sparks(c, a, 26, GOLD, 11, 1.4); fx.ring(P.pos, 2.4, GOLD, .4); sfx('parry'); G.shake = .22; G.slow = .12; gainUlt(14); P.qi = Math.min(100, P.qi + 18); P.hitstop = .08;
       if (o.src && !o.src.dead) { P.counterT = 1.25; P.counterFrom = o.src; if (o.src.kind === 'boss') { o.src.poise -= 36; o.src.hitstop = .16; if (o.src.poise <= 0) breakBoss(o.src); else if (!o.proj) { cancelSeq(o.src); o.src.stun = .9; } } else if (!o.proj) { cancelSeq(o.src); o.src.stun = 1.5; o.src.hitstop = .12; } }
       return 'parry';
     }
@@ -167,7 +209,7 @@ function damagePlayer(dmg, o) {
 const KINDS = {
   melee: { hp: 70, speed: 3.0, r: .5, body: { h: 1.72, bulk: 1.05, robe: 0x55594f, trim: 0x6a4a35, skin: 0x8d978a, talisman: true, weapon: { len: .95, w: .08, color: 0x6d6258 } } },
   ranged: { hp: 46, speed: 2.9, r: .45, body: { h: 1.66, bulk: .86, robe: 0x40203f, trim: 0x8c1f2a, skin: 0xe6e2da, hat: true } },
-  boss: { hp: 1400, speed: 3.4, r: 1.0, poise: 100, body: { h: 2.55, bulk: 1.38, robe: 0x1d1418, trim: 0x7d1a22, skin: 0xa58d80, dark: 0x15131a, metal: 0x2b2a30, pauldron: true, horn: true, weapon: { len: 2.3, w: .17, color: 0x26242b, glow: 0x3a0508 } } },
+  boss: { hp: 1600, speed: 3.4, r: 1.0, poise: 100, body: { h: 2.55, bulk: 1.38, robe: 0x1d1418, trim: 0x7d1a22, skin: 0xa58d80, dark: 0x15131a, metal: 0x2b2a30, pauldron: true, horn: true, weapon: { len: 2.3, w: .17, color: 0x26242b, glow: 0x3a0508 } } },
 };
 function spawn(kind, x, z) {
   const D = KINDS[kind];
@@ -194,7 +236,7 @@ function runSeq(e, dt) {
 // Sequence steps
 const wind = (dur, tele, o = {}) => ({
   dur, anim: 'windup', dir: o.dir, tilt: o.tilt,
-  start(e) { e.yaw = angTo(e.pos, P.pos); e.tele = fx.telegraph({ ...tele, pos: e.pos, yaw: e.yaw, dur }); sfx('warn'); },
+  start(e) { e.yaw = angTo(e.pos, P.pos); e.tele = fx.telegraph({ ...tele, pos: e.pos, yaw: e.yaw, dur }); },
   tick(e, p, dt) { if (p < (o.track ?? .55)) { e.yaw = turn(e.yaw, angTo(e.pos, P.pos), dt * 7); e.tele && e.tele.set(e.pos, e.yaw); } if (e.kind === 'boss' && e.body.weapon.userData.blade) { const m = e.body.weapon.userData.blade; m.emissive.setRGB(.5 * p, .03 * p, .04 * p); } },
   end(e) { e.tele = null; },
 });
@@ -249,14 +291,14 @@ const BOSS = {
   },
   slam(e) {
     const s = [{ dur: e.p2 ? .9 : 1.05, anim: 'leap',
-      start(b) { b.from = b.pos.clone(); b.to = clampToArena(P.pos.clone(), b.r); b.tele = fx.telegraph({ kind: 'circle', pos: b.to, radius: 3.7, dur: this.dur, color: CRIM }); sfx('warn'); },
+      start(b) { b.from = b.pos.clone(); b.to = clampToArena(P.pos.clone(), b.r); b.tele = fx.telegraph({ kind: 'circle', pos: b.to, radius: 3.7, dur: this.dur, color: CRIM }); },
       tick(b, p) { if (p > .28) { const u = (p - .28) / .72, q = u * u * (3 - 2 * u); b.pos.lerpVectors(b.from, b.to, q); b.y = Math.sin(u * Math.PI) * 3.4; b.yaw = angTo(b.from, b.to) || b.yaw; } },
       end(b) { b.y = 0; b.tele = null; fx.ring(b.pos, 5.2, CRIM, .6); fx.crack(b.pos, 3.7, CRIM, 3.5); fx.burst(b.pos, 40, [1.2, .5, .3], 8, 5, .34, .8, .2); G.shake = .7; sfx('boom'); if (dist(b.pos, P.pos) < 3.7 + P.r) damagePlayer(26, { from: b.pos, src: b, unblockable: true }); } }, rest(e.p2 ? .9 : 1.25)];
     s.cd = .8; return s;
   },
   waves(e) {
     const n = e.p2 ? 5 : 3, sp = .3, s = [{ dur: .9, anim: 'cast',
-      start(b) { b.yaw = angTo(b.pos, P.pos); b.teles = []; for (let i = 0; i < n; i++) b.teles.push(fx.telegraph({ kind: 'line', pos: b.pos, yaw: b.yaw + (i - (n - 1) / 2) * sp, length: 15, width: 1.7, dur: .9, color: AMBER })); sfx('warn'); },
+      start(b) { b.yaw = angTo(b.pos, P.pos); b.teles = []; for (let i = 0; i < n; i++) b.teles.push(fx.telegraph({ kind: 'line', pos: b.pos, yaw: b.yaw + (i - (n - 1) / 2) * sp, length: 15, width: 1.7, dur: .9, color: AMBER })); },
       end(b) { b.teles = null; for (let i = 0; i < n; i++) { const yaw = b.yaw + (i - (n - 1) / 2) * sp, c = fx.crescent({ color: [1.7, .3, .2], radius: 1.7, arc: 1.7 }); G.projs.push({ team: 'e', src: b, pos: b.pos.clone(), yaw, speed: 13, r: .95, dmg: 15, life: 1.6, fxh: c, color: CRIM, big: true }); } sfx('heavy'); G.shake = .2; } }, rest(.85)];
     s.cd = .7; return s;
   },
@@ -292,7 +334,7 @@ function damageEnemy(e, dmg, o = {}) {
   return true;
 }
 function kill(e, a) {
-  e.dead = true; e.hp = 0; cancelSeq(e); e.kb.set(Math.sin(a) * 9, 0, Math.cos(a) * 9); P.qi = Math.min(100, P.qi + 8); sfx('die');
+  gainUlt(6); e.dead = true; e.hp = 0; cancelSeq(e); e.kb.set(Math.sin(a) * 9, 0, Math.cos(a) * 9); P.qi = Math.min(100, P.qi + 8); sfx('die');
   if (e.bar) { scene.remove(...e.bar); e.bar = null; }
   if (e.kind === 'boss') { sfx('roar'); G.slow = 1.2; G.shake = .8; fx.ring(e.pos, 10, GOLD, 1.2); fx.burst(e.pos, 70, CRIM, 9, 7, .35, 1.4); world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); G.projs.forEach((b) => { if (b.team === 'e') b.life = 0; }); after(2.6, () => setMode('win')); }
   else fx.burst(e.pos, 22, [.2, .5, .22], 3, 3, .4, .9);
@@ -344,7 +386,7 @@ function startBoss() {
   showBanner('厲無咎', '守在這裡的，是當年親手關上山門的人。', 3.6);
 }
 function startGame(stage) {
-  clearField(); Object.assign(P, { hp: P.maxHp, st: 100, qi: 30, state: 'idle', t: 0, hitstop: 0, iframe: 1, buf: null, counterT: 0, cdQ: 0, cdE: 0, yaw: Math.PI, y: 0 }); P.pos.set(0, 0, 7); P.kb.set(0, 0, 0);
+  clearField(); Object.assign(P, { ult: Q.has('ult') ? 100 : 0, hp: P.maxHp, st: 100, qi: 30, state: 'idle', hidden: false, t: 0, hitstop: 0, iframe: 1, buf: null, counterT: 0, cdQ: 0, cdE: 0, yaw: Math.PI, y: 0 }); P.pos.set(0, 0, 7); P.kb.set(0, 0, 0);
   world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); $('boss').classList.remove('on'); G.slow = 0; G.intro = 0; setMode('play');
   if (stage === 'boss') startBoss(); else { G.phase = 'wave'; startWave(); }
 }
@@ -364,22 +406,26 @@ function updateCamera(dt) {
   else { ft.copy(P.pos); const b = G.boss; if (b && !b.dead) { const dx = b.pos.x - P.pos.x, dz = b.pos.z - P.pos.z, d = Math.hypot(dx, dz) || 1, k = G.intro > .6 ? Math.min(d * .75, 9) : Math.min(d * .22, 3); ft.x += dx / d * k; ft.z += dz / d * k; } ft.x += Math.max(-1, Math.min(1, (aim.x - P.pos.x) * .05)); ft.z += Math.max(-1, Math.min(1, (aim.z - P.pos.z) * .05)); }
   if (G.camO) { camera.position.copy(G.camO.pos); camera.lookAt(G.camO.look); return; }   /* test hook: close-up showcase camera */
   G.focus.lerp(ft, 1 - Math.exp(-dt * (G.intro > 0 ? 2.2 : 5))); G.shake = Math.max(0, G.shake - dt * 1.8);
-  const s = G.shake * G.shake * 1.6; camera.position.set(G.focus.x + CAM.x + (Math.random() - .5) * s, CAM.y + (Math.random() - .5) * s, G.focus.z + CAM.z + (Math.random() - .5) * s * .5);
+  const ulting = P.state === 'ult' && G.mode === 'play', zt = !ulting ? 1 : P.t < ULT.cut ? .82 : P.t < ULT.fin ? .94 : 1.18; G.zoom += (zt - G.zoom) * (1 - Math.exp(-dt * (zt > 1 ? 14 : 3.5)));
+  const s = G.shake * G.shake * 1.6; camera.position.set(G.focus.x + CAM.x * G.zoom + (Math.random() - .5) * s, CAM.y * G.zoom + (Math.random() - .5) * s, G.focus.z + CAM.z * G.zoom + (Math.random() - .5) * s * .5);
+  G.flash = Math.max(0, G.flash - dt * 3.4); const gu = R.grade.uniforms; gu.uFlash.value = G.flash * G.flash; gu.uExposure.value += ((ulting && P.t < ULT.fin ? (P.t < ULT.cut ? .56 : .34) : 1.15) - gu.uExposure.value) * (1 - Math.exp(-dt * (ulting && P.t >= ULT.cut ? 22 : 6)));
+  G.shock = Math.max(0, G.shock - dt * 2.2); gu.uShock.value = G.shock; gu.uMono.value += ((ulting && P.t >= ULT.cut - .04 && P.t < ULT.fin ? 1 : 0) - gu.uMono.value) * (1 - Math.exp(-dt * 30));
 }
 const W = (el, v) => { el.style.width = (Math.max(0, Math.min(1, v)) * 100).toFixed(1) + '%'; };
-const hud = { hp: $('hp').children, st: $('st').children, qi: $('qi').children, bhp: $('bhp').children, bpo: $('bpo').children, hurt: $('hurt'), counter: $('counter'), sq: $('s-q'), se: $('s-e'), sd: $('s-dge'), sb: $('s-blk') };
+const hud = { hp: $('hp').children, st: $('st').children, qi: $('qi').children, bhp: $('bhp').children, bpo: $('bpo').children, hurt: $('hurt'), counter: $('counter'), sq: $('s-q'), ur: $('s-r-ring'), se: $('s-e'), sd: $('s-dge'), sb: $('s-blk') };
 function updateHud(dt) {
   W(hud.hp[0], P.hp / P.maxHp); W(hud.hp[1], P.hp / P.maxHp); W(hud.st[0], P.st / 100); W(hud.qi[0], P.qi / 100);
   const b = G.boss; if (b) { W(hud.bhp[0], b.hp / b.maxHp); W(hud.bhp[1], b.hp / b.maxHp); W(hud.bpo[0], b.poise / b.maxPoise); }
   G.hurtFlash = Math.max(0, (G.hurtFlash || 0) - dt * 2.2); hud.hurt.style.opacity = (G.hurtFlash * .7 + (P.hp < 30 && P.state !== 'dead' ? .18 + .1 * Math.sin(G.time * 6) : 0)).toFixed(2);
   hud.counter.classList.toggle('on', P.counterT > 0 && G.mode === 'play');
-  hud.sq.classList.toggle('dim', P.qi < 25); hud.sq.lastElementChild.style.height = (P.cdQ / 3.5 * 160) + '%';
-  hud.se.classList.toggle('dim', P.qi < 50); hud.se.lastElementChild.style.height = (P.cdE / 8 * 160) + '%';
+  hud.sq.classList.toggle('dim', P.qi < 25); hud.sq.lastElementChild.style.height = (P.cdQ / 3.5 * 100) + '%';
+  hud.se.classList.toggle('dim', P.qi < 50); hud.se.lastElementChild.style.height = (P.cdE / 8 * 100) + '%';
+  hud.ur.style.setProperty('--p', P.ult.toFixed(0) + '%'); hud.ur.parentNode.classList.toggle('ready', P.ult >= 100);
   hud.sd.classList.toggle('dim', P.st < 18); hud.sb.classList.toggle('dim', P.st <= 0);
   if (bannerT > 0) { bannerT -= dt; if (bannerT <= 0) bannerEl.classList.remove('on'); }
 }
 function place(a, dt) {
-  const B = a.body, j = a.hitstop > 0 && a !== P ? .05 : 0; B.root.position.set(a.pos.x + (Math.random() - .5) * j, a.y || 0, a.pos.z + (Math.random() - .5) * j); B.root.rotation.y = a.yaw;
+  const B = a.body, j = a.hitstop > 0 && a !== P ? .05 : 0; B.root.position.set(a.pos.x + (Math.random() - .5) * j, a.y || 0, a.pos.z + (Math.random() - .5) * j); B.root.rotation.y = a.yaw; B.root.visible = !a.hidden;
   if (!(a.hitstop > 0)) { if (B.pose) B.pose(a, dt); else poseBody(B, a, dt); }
   const f = a.flash > 0 ? a.flash / .14 : 0; if (a !== P) for (const m of B.mats) if (!m.userData.base) { m.emissive.setScalar(f * .9); }
   if (a.bar) { const y = 2.25 * B.s + (a.y || 0); a.bar[0].position.set(a.pos.x - .52, y, a.pos.z); a.bar[1].position.set(a.pos.x - .5, y, a.pos.z); a.bar[1].scale.x = Math.max(.001, a.hp / a.maxHp); const v = a.hp < a.maxHp && !a.dead; a.bar[0].visible = a.bar[1].visible = v; }
@@ -391,10 +437,13 @@ function update(dt) {
   if (G.mode === 'play') {
     updateAim(); G.tokenCd = Math.max(0, G.tokenCd - dt);
     for (let i = G.timers.length - 1; i >= 0; i--) { const t = G.timers[i]; t.t -= dt; if (t.t <= 0) { G.timers.splice(i, 1); t.fn(); } }
-    updatePlayer(dt); for (const e of [...G.enemies]) updateEnemy(e, dt); separate(); updateProjs(dt); flow(dt);
+    updatePlayer(dt); const frozen = P.state === 'ult' && P.t < ULT.fin;
+    for (const e of [...G.enemies]) { if (frozen && !e.dead) { e.flash = Math.max(0, e.flash - dt); e.hitstop = Math.max(0, e.hitstop - dt); if (e.kb.lengthSq() > .02) { move(e, e.kb.x * dt, e.kb.z * dt); e.kb.multiplyScalar(Math.exp(-8 * dt)); } e.anim = 'hurt'; continue; } updateEnemy(e, dt); }
+    separate(); if (!frozen) updateProjs(dt); flow(dt);
   } else P.anim = P.state === 'dead' ? 'dead' : 'idle';
   place(P, dt); for (const e of G.enemies) place(e, dt);
   if (Math.random() < dt * 5) { const L = world.lanterns[Math.random() * 4 | 0].l.position; fx.p.spawn(L.x, 1.7, L.z, (Math.random() - .5) * .5, .7 + Math.random(), (Math.random() - .5) * .5, 1.6, .09, 2, .8, .25, -.3, .6); }
+  music(G.mode !== 'play' ? 'explore' : G.phase === 'boss' && G.boss && !G.boss.dead ? 'boss' : G.phase === 'wave' ? 'battle' : 'explore');
   fx.update(dt); updateCamera(dt); updateHud(dt);
 }
 let last = performance.now();
@@ -403,10 +452,10 @@ function frame(now, forced) {
   if (G.slow > 0) { G.slow -= real; dt *= .3; }
   G.time += dt; update(dt); R.render(G.time); dbg(); endFrame();
 }
-const dbg = debugPanel(() => `mode ${G.mode}/${G.phase}  state ${P.state}  t ${P.t.toFixed(2)}\npos ${P.pos.x.toFixed(1)},${P.pos.z.toFixed(1)}  rim ${(ARENA_R - Math.hypot(P.pos.x, P.pos.z)).toFixed(1)}\nhp ${P.hp | 0} st ${P.st | 0} qi ${P.qi | 0}  enemies ${alive().length}`);
+const dbg = debugPanel(() => `mode ${G.mode}/${G.phase}  state ${P.state}  t ${P.t.toFixed(2)}\npos ${P.pos.x.toFixed(1)},${P.pos.z.toFixed(1)}  rim ${(ARENA_R - Math.hypot(P.pos.x, P.pos.z)).toFixed(1)}\nhp ${P.hp | 0} st ${P.st | 0} qi ${P.qi | 0} ult ${P.ult | 0}  enemies ${alive().length}`);
 // test hooks: advance frames by hand (hidden tabs do not animate), fake a key press, read state
 G.step = (n = 60, dt = 1 / 60) => { for (let i = 0; i < n; i++) frame(0, dt); };
-G.clamp = clampToArena; G.press = (...c) => c.forEach((k) => pressed.add(k)); G.keys = keys; G.mouse = mouse; G.aim = aim; G.R = R; G.world = world;
+G.clamp = clampToArena; G.music = musicState; G.press = (...c) => c.forEach((k) => pressed.add(k)); G.keys = keys; G.mouse = mouse; G.aim = aim; G.R = R; G.world = world;
 G.state = () => ({ mode: G.mode, phase: G.phase, p: { s: P.state, hp: Math.round(P.hp), st: Math.round(P.st), qi: Math.round(P.qi), x: +P.pos.x.toFixed(2), z: +P.pos.z.toFixed(2) }, e: G.enemies.map((e) => ({ k: e.kind, hp: Math.round(e.hp), x: +e.pos.x.toFixed(1), z: +e.pos.z.toFixed(1), dead: e.dead, seq: e.seq ? e.last + ':' + e.si : '', stun: +e.stun.toFixed(2) })), projs: G.projs.length, fx: fx.items.length });
 
 G.ready = true; $('go').textContent = '點擊開始';

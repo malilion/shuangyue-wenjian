@@ -6,18 +6,20 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 const Grade = {
-  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uExposure: { value: 1.15 }, uTint: { value: new THREE.Vector3(0, 0, 0) } },
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uExposure: { value: 1.15 }, uTint: { value: new THREE.Vector3(0, 0, 0) }, uFlash: { value: 0 }, uMono: { value: 0 }, uShock: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
   fragmentShader: /* glsl */`
-    varying vec2 vUv; uniform sampler2D tDiffuse; uniform float uTime, uExposure; uniform vec3 uTint;
+    varying vec2 vUv; uniform sampler2D tDiffuse; uniform float uTime, uExposure, uFlash, uMono, uShock; uniform vec3 uTint;
     vec3 aces(vec3 x){ return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14), 0., 1.); }
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
     void main(){
-      vec3 c = texture2D(tDiffuse, vUv).rgb * uExposure;
+      vec2 sd = (vUv - .5) * uShock * .045;                                              /* radial colour split on big impacts */
+      vec3 c = vec3(texture2D(tDiffuse, vUv + sd).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - sd).b) * uExposure;
       float l = dot(c, vec3(.2126,.7152,.0722));
       c = mix(c * vec3(.84,.96,1.16), c * vec3(1.08,1.,.9), smoothstep(.02,.9,l));   /* cold shadows, warm highlights */
-      c += uTint * (.15 + l);
+      c += uTint * (.15 + l); c += uFlash * vec3(.55, .8, 1.) * (.35 + l);
       c = aces(c);
+      float mg = dot(c, vec3(.3,.59,.11)); c = mix(c, vec3(smoothstep(.2,.92,mg)) * vec3(.9,.96,1.), uMono);   /* ink-wash moment: hard black and white */
       vec2 d = vUv - .5; c *= 1. - dot(d,d) * 1.05;
       c = pow(c, vec3(1./2.2));
       c += (hash(vUv * 900. + uTime) - .5) * .022;

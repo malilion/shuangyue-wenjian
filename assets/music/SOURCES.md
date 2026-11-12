@@ -1,0 +1,13 @@
+# Music sources
+
+Generated with Google Flow Music (flowmusic.app) on 2026-11-12 from the account owner's session; two takes each,
+take 1 used. `raw/` keeps both takes as downloaded. The `.mp3` files are made with `tools/loop_music.sh`
+(trailing fade removed, tail crossfaded into the head, loudness normalised to -18 LUFS).
+
+| File | Flow Music title | Prompt summary |
+|---|---|---|
+| explore.mp3 | Moonlit Ruins (Yu Mode) | guqin + xiao, sparse, D yu mode, 60 BPM |
+| battle.mp3 | Puppet Duel in Moonlit Ruins | pipa, dagu, bangzi, erhu drone, D yu mode, 120 BPM |
+| boss.mp3 | Fallen Sword Saint Boss Battle | suona, dagu, timpani, tremolo strings, D minor, 140 BPM |
+
+Usage rights follow Google Flow Music's terms for the generating account; check them before distributing.

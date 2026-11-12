@@ -5,7 +5,7 @@ let ctx = null, out = null, buf = null;
 export function initAudio(muted) {
   if (muted || ctx) return;
   try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
-  out = ctx.createGain(); out.gain.value = .55; out.connect(ctx.destination); loadSamples();
+  out = ctx.createGain(); out.gain.value = .55; out.connect(ctx.destination); loadSamples(); loadMusic();
   buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate); const d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
 }
 function noise(dur, f0, f1, gain, q = 1.2, type = 'bandpass') {
@@ -19,6 +19,19 @@ function tone(f0, f1, dur, gain, type = 'sine') {
   o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur); g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
   o.connect(g).connect(out); o.start(t); o.stop(t + dur + .02);
 }
+// Music: assets/music/{explore,battle,boss}.mp3, all looping from the moment they load, only their gains move.
+// Kept at roughly a third of the effects level so hits stay on top. Missing files are skipped silently.
+const tracks = {}; let want = null, musicOn = false; const MUSIC_GAIN = .2;
+async function loadMusic() {
+  if (musicOn) return; musicOn = true;
+  for (const name of ['explore', 'battle', 'boss']) {
+    try { const r = await fetch(`assets/music/${name}.mp3`); if (!r.ok) continue; const b = await ctx.decodeAudioData(await r.arrayBuffer());
+      const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = b; src.loop = true; g.gain.value = 0; src.connect(g).connect(out); src.start(); tracks[name] = g; applyMusic(2.5); } catch { /* optional file */ }
+  }
+}
+function applyMusic(fade) { if (!ctx) return; const t = ctx.currentTime; for (const [n, g] of Object.entries(tracks)) { g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(n === want ? MUSIC_GAIN : 0, t + fade); } }
+export function music(name, fade = 1.6) { if (name === want) return; want = name; applyMusic(fade); }
+export const musicState = () => ({ want, loaded: Object.keys(tracks), gains: Object.fromEntries(Object.entries(tracks).map(([n, g]) => [n, +g.gain.value.toFixed(3)])) });
 // cue -> [variant count, gain, playback-rate centre]; cues can borrow another cue's files
 const BANK = { swing: [5, .5, 1], heavy: ['swing', .65, .72], hit: [3, .8, 1], hitHeavy: [2, .95, .9], parry: [2, 1, 1.1], ring: [1, .7, 1], block: [3, .7, 1], hurt: [2, .7, 1], dodge: [2, .45, 1], cast: [3, .45, 1], bolt: [3, .5, 1.1], boom: [3, .9, .85], die: [3, .6, 1], roar: [2, .8, .9] };
 const samples = {}; let loading = false;
@@ -50,7 +63,8 @@ export function sfx(name) {
     case 'cast': tone(300 * r, 900 * r, .3, .14, 'triangle'); break;
     case 'bolt': noise(.2, 1800 * r, 600, .2, 2); break;
     case 'boom': tone(90, 28, .6, .95); noise(.5, 700, 80, .6, .5, 'lowpass'); break;
-    case 'warn': tone(520, 500, .18, .1, 'square'); break;
+    case 'ultCharge': tone(90, 520, .85, .28, 'triangle'); tone(180, 1040, .85, .1, 'sine'); noise(.85, 300, 4000, .12, .7); break;
+    case 'ultHit': tone(1400 * r, 500, .12, .12, 'triangle'); break;
     case 'die': noise(.5, 1200, 100, .4, .5, 'lowpass'); tone(160, 40, .5, .4, 'sawtooth'); break;
   }
 }
