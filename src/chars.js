@@ -19,7 +19,7 @@ const V = () => new THREE.Vector3(), Qn = () => new THREE.Quaternion();
 const a0 = V(), a1 = V(), a2 = V(), a3 = V(), q0 = Qn(), q1 = Qn(), q2 = Qn(), UP = new THREE.Vector3(0, 1, 0);
 
 // Clips: drop scale tracks, and pin the hips' horizontal travel (the game moves the actor, not the clip).
-function prepClips(gltf) {
+export function prepClips(gltf) {
   if (gltf.userData.clips) return gltf.userData.clips;
   const hips = gltf.scene.getObjectByName('Hips'); gltf.scene.updateMatrixWorld(true);
   const pq = hips.parent.getWorldQuaternion(Qn()), pqi = pq.clone().invert(), rest = hips.position.clone().applyQuaternion(pq), out = {};
@@ -55,6 +55,8 @@ export function makeCharBody(gltf, o) {
   box = new THREE.Box3().setFromObject(inner); fit.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
   const s = o.h / 1.75, mixer = new THREE.AnimationMixer(inner), clips = prepClips(gltf), acts = {};
   for (const [name, id] of Object.entries(o.clips)) if (clips[id]) acts[name] = mixer.clipAction(clips[id]);
+  /* all characters share one skeleton template, so a clip can be borrowed from another character's file */
+  for (const [name, [g, id]] of Object.entries(o.borrow || {})) if (g && prepClips(g)[id]) acts[name] = mixer.clipAction(prepClips(g)[id]);
 
   // weapon: a holder under the right hand whose world orientation we set directly from a blade direction
   const holder = new THREE.Group(); let bladeMat = null;

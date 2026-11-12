@@ -1,10 +1,11 @@
-// PLACEHOLDER sound: a few synthesized cues so hits can be felt while tuning. To be replaced with recorded CC0
-// samples (3+ variants each) and real music; files dropped in assets/sfx and assets/music will take over.
+// Sound: recorded CC0 samples (assets/sfx, sources in SOURCES.md) with several variants per cue, picked at random with a
+// little pitch drift. Synth layers only fill gaps (sub thump under hits, a metallic ping on parry). If a sample is
+// missing the synth cue alone still plays. Music is not wired yet.
 let ctx = null, out = null, buf = null;
 export function initAudio(muted) {
   if (muted || ctx) return;
   try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return; }
-  out = ctx.createGain(); out.gain.value = .5; out.connect(ctx.destination);
+  out = ctx.createGain(); out.gain.value = .55; out.connect(ctx.destination); loadSamples();
   buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate); const d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
 }
 function noise(dur, f0, f1, gain, q = 1.2, type = 'bandpass') {
@@ -18,8 +19,25 @@ function tone(f0, f1, dur, gain, type = 'sine') {
   o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur); g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
   o.connect(g).connect(out); o.start(t); o.stop(t + dur + .02);
 }
+// cue -> [variant count, gain, playback-rate centre]; cues can borrow another cue's files
+const BANK = { swing: [5, .5, 1], heavy: ['swing', .65, .72], hit: [3, .8, 1], hitHeavy: [2, .95, .9], parry: [2, 1, 1.1], ring: [1, .7, 1], block: [3, .7, 1], hurt: [2, .7, 1], dodge: [2, .45, 1], cast: [3, .45, 1], bolt: [3, .5, 1.1], boom: [3, .9, .85], die: [3, .6, 1], roar: [2, .8, .9] };
+const samples = {}; let loading = false;
+async function loadSamples() {
+  if (loading) return; loading = true;
+  await Promise.all(Object.entries(BANK).filter(([, b]) => typeof b[0] === 'number').flatMap(([name, b]) => Array.from({ length: b[0] }, async (_, i) => {
+    try { const r = await fetch(`assets/sfx/${name}_${i + 1}.mp3`); if (!r.ok) return; const buf = await ctx.decodeAudioData(await r.arrayBuffer()); (samples[name] ||= []).push(buf); } catch { /* optional file */ } })));
+}
+function sample(name) {
+  const b = BANK[name]; if (!b) return false; const list = samples[typeof b[0] === 'string' ? b[0] : name]; if (!list || !list.length) return false;
+  const s = ctx.createBufferSource(), g = ctx.createGain(); s.buffer = list[Math.random() * list.length | 0]; s.playbackRate.value = b[2] * (.94 + Math.random() * .12); g.gain.value = b[1]; s.connect(g).connect(out); s.start(); return true;
+}
 export function sfx(name) {
-  if (!ctx) return; const r = .92 + Math.random() * .16;
+  if (!ctx) return; loadSamples(); const r = .92 + Math.random() * .16;
+  if (sample(name)) {      /* recorded cue found: add only the synth layer that gives it weight */
+    if (name === 'hit') tone(150 * r, 60, .1, .35); else if (name === 'hitHeavy') tone(105 * r, 38, .22, .7); else if (name === 'boom') tone(85, 27, .6, .9);
+    else if (name === 'parry') { sample('ring'); for (const f of [2637, 3951, 5274]) tone(f * r, f * r * .995, .45, .12, 'triangle'); } else if (name === 'hurt') tone(190 * r, 70, .2, .4, 'sawtooth');
+    return;
+  }
   switch (name) {
     case 'swing': noise(.16, 900 * r, 3200 * r, .22, .8); break;
     case 'heavy': noise(.26, 500 * r, 2600 * r, .3, .7); break;

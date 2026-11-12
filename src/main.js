@@ -29,13 +29,13 @@ const after = (t, fn) => G.timers.push({ t, fn });
 // ---------- generated characters (fall back to the stand-in bodies when a file is missing) ----------
 const CH = {
   player: { h: 1.78, runTs: .95, weapon: 'w_jian', weaponLen: 1.2, clips: { idle: 'human_000090', guard: 'human_000040', run: 'human_000067', hit: 'human_000026', death: 'human_000068', roll: 'human_000042' } },
-  melee: { h: 1.75, runTs: 1.9, weapon: 'w_dao', weaponLen: 1.05, clips: { idle: 'human_000071', guard: 'human_000040', run: 'human_000053', hit: 'human_000026', death: 'human_000011' } },
-  ranged: { h: 1.72, runTs: 1.5, clips: { idle: 'human_000090', guard: 'human_000090', run: 'human_000089', hit: 'human_000026', death: 'human_000081' } },
+  melee: { h: 1.75, runTs: 1.65, borrow: (GL) => ({ run: [GL.ranged, 'human_000089'] }), weapon: 'w_dao', weaponLen: 1.05, clips: { idle: 'human_000071', guard: 'human_000040', run: 'human_000053', hit: 'human_000026', death: 'human_000011' } },
+  ranged: { h: 1.72, runTs: 1.6, clips: { idle: 'human_000090', guard: 'human_000090', run: 'human_000089', hit: 'human_000026', death: 'human_000081' } },
   boss: { h: 2.6, runTs: 1.3, weapon: 'w_great', weaponLen: 2.5, clips: { idle: 'human_000040', guard: 'human_000040', run: 'human_000089', hit: 'human_000003', death: 'human_000074' } },
 };
 const GL = {};
 if (!Q.has('standin')) await Promise.all(['player', 'melee', 'ranged', 'boss', 'w_jian', 'w_dao', 'w_great', 'lantern', 'pillar_tall', 'pillar_broken', 'pillar_fallen', 'burner', 'gate'].map(async (n) => { GL[n] = await loadGLB(`assets/models/${n}.glb`); }));
-const bodyFor = (kind, standIn) => (GL[kind] ? makeCharBody(GL[kind], { ...CH[kind], weapon: GL[CH[kind].weapon] || null }) : makeBody(standIn));
+const bodyFor = (kind, standIn) => (GL[kind] ? makeCharBody(GL[kind], { ...CH[kind], weapon: GL[CH[kind].weapon] || null, borrow: CH[kind].borrow ? CH[kind].borrow(GL) : null }) : makeBody(standIn));
 G.GL = GL; world.useProps(GL);
 
 // ---------- player ----------
@@ -165,7 +165,7 @@ function damagePlayer(dmg, o) {
 
 // ---------- enemies ----------
 const KINDS = {
-  melee: { hp: 70, speed: 3.3, r: .5, body: { h: 1.72, bulk: 1.05, robe: 0x55594f, trim: 0x6a4a35, skin: 0x8d978a, talisman: true, weapon: { len: .95, w: .08, color: 0x6d6258 } } },
+  melee: { hp: 70, speed: 3.0, r: .5, body: { h: 1.72, bulk: 1.05, robe: 0x55594f, trim: 0x6a4a35, skin: 0x8d978a, talisman: true, weapon: { len: .95, w: .08, color: 0x6d6258 } } },
   ranged: { hp: 46, speed: 2.9, r: .45, body: { h: 1.66, bulk: .86, robe: 0x40203f, trim: 0x8c1f2a, skin: 0xe6e2da, hat: true } },
   boss: { hp: 1400, speed: 3.4, r: 1.0, poise: 100, body: { h: 2.55, bulk: 1.38, robe: 0x1d1418, trim: 0x7d1a22, skin: 0xa58d80, dark: 0x15131a, metal: 0x2b2a30, pauldron: true, horn: true, weapon: { len: 2.3, w: .17, color: 0x26242b, glow: 0x3a0508 } } },
 };
@@ -271,7 +271,7 @@ const BOSS = {
 function breakBoss(e) { cancelSeq(e); e.stun = 2.6; e.poise = e.maxPoise; fx.ring(e.pos, 4, GOLD, .6); G.shake = .5; G.slow = .25; sfx('parry'); }
 function phaseTwo(e) {
   e.p2 = true; cancelSeq(e); e.stun = 0; e.invuln = true; world.setMood(1); R.grade.uniforms.uTint.value.set(.05, 0, 0);
-  startSeq(e, [{ dur: 1.5, anim: 'cast', start(b) { fx.ring(b.pos, 9, CRIM, .9); fx.burst(b.pos, 50, CRIM, 9, 6, .3, 1); G.shake = .6; sfx('boom'); const a = angTo(b.pos, P.pos); if (dist(b.pos, P.pos) < 7) P.kb.set(Math.sin(a) * 16, 0, Math.cos(a) * 16); showBanner('', '「三十年了。還有人敢上這座山。」', 3.2); }, end(b) { b.invuln = false; } }], 'p2'); e.seq.cd = .3;
+  startSeq(e, [{ dur: 1.5, anim: 'cast', start(b) { sfx('roar'); fx.ring(b.pos, 9, CRIM, .9); fx.burst(b.pos, 50, CRIM, 9, 6, .3, 1); G.shake = .6; sfx('boom'); const a = angTo(b.pos, P.pos); if (dist(b.pos, P.pos) < 7) P.kb.set(Math.sin(a) * 16, 0, Math.cos(a) * 16); showBanner('', '「三十年了。還有人敢上這座山。」', 3.2); }, end(b) { b.invuln = false; } }], 'p2'); e.seq.cd = .3;
 }
 
 function damageEnemy(e, dmg, o = {}) {
@@ -294,7 +294,7 @@ function damageEnemy(e, dmg, o = {}) {
 function kill(e, a) {
   e.dead = true; e.hp = 0; cancelSeq(e); e.kb.set(Math.sin(a) * 9, 0, Math.cos(a) * 9); P.qi = Math.min(100, P.qi + 8); sfx('die');
   if (e.bar) { scene.remove(...e.bar); e.bar = null; }
-  if (e.kind === 'boss') { G.slow = 1.2; G.shake = .8; fx.ring(e.pos, 10, GOLD, 1.2); fx.burst(e.pos, 70, CRIM, 9, 7, .35, 1.4); world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); G.projs.forEach((b) => { if (b.team === 'e') b.life = 0; }); after(2.6, () => setMode('win')); }
+  if (e.kind === 'boss') { sfx('roar'); G.slow = 1.2; G.shake = .8; fx.ring(e.pos, 10, GOLD, 1.2); fx.burst(e.pos, 70, CRIM, 9, 7, .35, 1.4); world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); G.projs.forEach((b) => { if (b.team === 'e') b.life = 0; }); after(2.6, () => setMode('win')); }
   else fx.burst(e.pos, 22, [.2, .5, .22], 3, 3, .4, .9);
 }
 function updateEnemy(e, dt) {
@@ -406,7 +406,7 @@ function frame(now, forced) {
 const dbg = debugPanel(() => `mode ${G.mode}/${G.phase}  state ${P.state}  t ${P.t.toFixed(2)}\npos ${P.pos.x.toFixed(1)},${P.pos.z.toFixed(1)}  rim ${(ARENA_R - Math.hypot(P.pos.x, P.pos.z)).toFixed(1)}\nhp ${P.hp | 0} st ${P.st | 0} qi ${P.qi | 0}  enemies ${alive().length}`);
 // test hooks: advance frames by hand (hidden tabs do not animate), fake a key press, read state
 G.step = (n = 60, dt = 1 / 60) => { for (let i = 0; i < n; i++) frame(0, dt); };
-G.press = (...c) => c.forEach((k) => pressed.add(k)); G.keys = keys; G.mouse = mouse; G.aim = aim; G.R = R; G.world = world;
+G.clamp = clampToArena; G.press = (...c) => c.forEach((k) => pressed.add(k)); G.keys = keys; G.mouse = mouse; G.aim = aim; G.R = R; G.world = world;
 G.state = () => ({ mode: G.mode, phase: G.phase, p: { s: P.state, hp: Math.round(P.hp), st: Math.round(P.st), qi: Math.round(P.qi), x: +P.pos.x.toFixed(2), z: +P.pos.z.toFixed(2) }, e: G.enemies.map((e) => ({ k: e.kind, hp: Math.round(e.hp), x: +e.pos.x.toFixed(1), z: +e.pos.z.toFixed(1), dead: e.dead, seq: e.seq ? e.last + ':' + e.si : '', stun: +e.stun.toFixed(2) })), projs: G.projs.length, fx: fx.items.length });
 
 G.ready = true; $('go').textContent = '點擊開始';

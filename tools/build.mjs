@@ -25,6 +25,7 @@ for (const n of ['melee', 'ranged']) await glb(n, { tex: 1024, skinned: true });
 for (const n of ['w_jian', 'w_dao']) await glb(n, { tex: 512 });
 for (const n of ['w_great', 'lantern', 'pillar_tall', 'pillar_broken', 'pillar_fallen', 'burner']) await glb(n, { tex: 1024 });
 await glb('gate', { tex: 1536 });
+if (fs.existsSync('assets/sfx')) for (const f of fs.readdirSync('assets/sfx').filter((f) => f.endsWith('.mp3'))) { const b = fs.readFileSync('assets/sfx/' + f); A['assets/sfx/' + f] = 'data:audio/mpeg;base64,' + b.toString('base64'); raw += b.length; src += b.length; }
 console.log('assets', mb(src), '->', mb(raw));
 
 const r = await build({ entryPoints: ['src/main.js'], bundle: true, format: 'esm', minify: true, write: false, target: 'es2022', legalComments: 'none' });
