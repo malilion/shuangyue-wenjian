@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>霜月問劍</title>
+<style>
+  :root { --kai: "Kaiti TC", "STKaiti", "BiauKai", "DFKai-SB", "Songti TC", "Noto Serif TC", serif; --ink: #e8eef0; --teal: #7fe3e6; --red: #d8483e; --gold: #e2c88a; }
+  html, body { margin: 0; height: 100%; background: #05080c; overflow: hidden; color: var(--ink); font-family: var(--kai); user-select: none; -webkit-user-select: none; }
+  canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+  #hud { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity .6s; }
+  body.play #hud { opacity: 1; }
+
+  .bar { position: relative; transform: skewX(-22deg); background: rgba(6, 10, 14, .72); border: 1px solid rgba(225, 235, 240, .32); overflow: hidden; }
+  .bar > i { position: absolute; left: 0; top: 0; bottom: 0; display: block; }
+  .bar > i.lag { background: #e9dcae; transition: width .45s ease-out .28s; }
+  .bar > i.fill { transition: width .08s linear; }
+  .bar > i.fill::after { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 3px; background: rgba(255, 255, 255, .85); }
+  .bar::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 39px, rgba(0, 0, 0, .45) 39px 40px); }
+
+  #pl { position: absolute; left: 34px; top: 28px; width: 340px; }
+  #pl .name { font-size: 15px; letter-spacing: .5em; opacity: .85; margin: 0 0 7px 6px; }
+  #hp { height: 13px; } #hp .fill { background: linear-gradient(180deg, #e8685a, #a8281f); }
+  #st { height: 5px; width: 72%; margin-top: 5px; } #st .fill { background: linear-gradient(180deg, #f1e3a7, #b9993f); }
+  #qi { height: 5px; width: 58%; margin-top: 4px; } #qi .fill { background: linear-gradient(180deg, #9ff2f2, #2f9aa3); }
+
+  #boss { position: absolute; left: 50%; top: 30px; width: min(620px, 60vw); transform: translateX(-50%); text-align: center; opacity: 0; transition: opacity .8s; }
+  #boss.on { opacity: 1; }
+  #boss .name { font-size: 20px; letter-spacing: .7em; margin: 0 0 8px .7em; text-shadow: 0 0 12px #000; }
+  #boss .name small { font-size: 12px; letter-spacing: .5em; opacity: .65; margin-left: .6em; }
+  #bhp { height: 11px; } #bhp .fill { background: linear-gradient(180deg, #c9413a, #6f1418); }
+  #bpo { height: 3px; width: 46%; margin: 5px auto 0; } #bpo .fill { background: #e2c88a; } #bpo::after { display: none; }
+
+  #skills { position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%); display: flex; gap: 12px; }
+  .slot { position: relative; width: 54px; height: 54px; border: 1px solid rgba(225, 235, 240, .4); background: radial-gradient(circle at 50% 35%, rgba(60, 90, 100, .55), rgba(6, 10, 14, .85)); transform: rotate(45deg); overflow: hidden; }
+  .slot b { position: absolute; inset: 0; display: grid; place-items: center; transform: rotate(-45deg); font-size: 25px; font-weight: 400; color: #dff6f6; text-shadow: 0 0 10px rgba(127, 227, 230, .7); }
+  .slot .cd { position: absolute; left: -30%; right: -30%; bottom: -30%; height: 0; background: rgba(0, 0, 0, .72); transform: rotate(-45deg); transform-origin: 50% 100%; }
+  .slot.dim b { color: #6b777b; text-shadow: none; }
+  .slotw { position: relative; width: 60px; height: 78px; display: grid; justify-items: center; }
+  .slotw em { position: absolute; bottom: -4px; font: 11px/1 ui-monospace, Menlo, monospace; font-style: normal; letter-spacing: .08em; opacity: .7; }
+
+  #counter { position: absolute; left: 50%; bottom: 138px; transform: translateX(-50%); font-size: 17px; letter-spacing: .5em; color: var(--gold); text-shadow: 0 0 14px rgba(226, 200, 138, .9); opacity: 0; transition: opacity .1s; }
+  #counter.on { opacity: 1; }
+  #banner { position: absolute; left: 0; right: 0; top: 23%; text-align: center; opacity: 0; transition: opacity 1s; text-shadow: 0 2px 18px #000, 0 0 3px #000; }
+  #banner.on { opacity: 1; }
+  #banner h2 { margin: 0; font-size: 40px; font-weight: 400; letter-spacing: .6em; text-indent: .6em; }
+  #banner p { margin: 12px 0 0; font-size: 16px; letter-spacing: .32em; opacity: .82; }
+  #hurt { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 180px 40px rgba(190, 20, 20, .85); opacity: 0; }
+
+  .screen { position: fixed; inset: 0; display: none; place-items: center; text-align: center; background: radial-gradient(ellipse at 50% 45%, rgba(5, 8, 12, .15), rgba(5, 8, 12, .82)); cursor: pointer; }
+  .screen.on { display: grid; }
+  .screen h1 { margin: 0; font-size: clamp(60px, 10vw, 128px); font-weight: 400; letter-spacing: .28em; text-indent: .28em; text-shadow: 0 0 40px rgba(127, 227, 230, .35), 0 4px 30px #000; }
+  .screen h1.small { font-size: 64px; }
+  .screen .sub { font-size: 17px; letter-spacing: .6em; text-indent: .6em; opacity: .75; margin-top: 10px; }
+  .screen .go { margin-top: 54px; font-size: 19px; letter-spacing: .55em; text-indent: .55em; color: var(--teal); animation: breathe 2.2s ease-in-out infinite; }
+  .screen .keys { margin-top: 38px; font-size: 14px; letter-spacing: .2em; line-height: 2; opacity: .72; }
+  .screen .keys kbd { font: 12px ui-monospace, Menlo, monospace; border: 1px solid rgba(225, 235, 240, .45); padding: 2px 7px; margin: 0 4px 0 14px; letter-spacing: 0; }
+  @keyframes breathe { 50% { opacity: .35; } }
+</style>
+<script type="importmap">{ "imports": { "three": "./node_modules/three/build/three.module.js", "three/addons/": "./node_modules/three/examples/jsm/" } }</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div id="pl">
+    <div class="name">沈霜</div>
+    <div class="bar" id="hp"><i class="lag"></i><i class="fill"></i></div>
+    <div class="bar" id="st"><i class="fill"></i></div>
+    <div class="bar" id="qi"><i class="fill"></i></div>
+  </div>
+  <div id="boss">
+    <div class="name">厲無咎<small>墮劍尊</small></div>
+    <div class="bar" id="bhp"><i class="lag"></i><i class="fill"></i></div>
+    <div class="bar" id="bpo"><i class="fill"></i></div>
+  </div>
+  <div id="banner"><h2></h2><p></p></div>
+  <div id="counter">破綻 · 左鍵</div>
+  <div id="skills">
+    <div class="slotw"><div class="slot" id="s-atk"><b>斬</b><div class="cd"></div></div><em>左鍵</em></div>
+    <div class="slotw"><div class="slot" id="s-blk"><b>架</b><div class="cd"></div></div><em>右鍵</em></div>
+    <div class="slotw"><div class="slot" id="s-dge"><b>閃</b><div class="cd"></div></div><em>空白</em></div>
+    <div class="slotw"><div class="slot" id="s-q"><b>氣</b><div class="cd"></div></div><em>Q</em></div>
+    <div class="slotw"><div class="slot" id="s-e"><b>落</b><div class="cd"></div></div><em>E</em></div>
+  </div>
+</div>
+<div id="hurt"></div>
+
+<div class="screen on" id="title">
+  <div>
+    <h1>霜月問劍</h1>
+    <div class="sub">廢棄山門 · 演武台</div>
+    <div class="go" id="go">載入中</div>
+    <div class="keys">
+      <kbd>W A S D</kbd>移動<kbd>左鍵</kbd>三段斬<kbd>右鍵</kbd>格擋，剛舉劍時接住即彈反<br>
+      <kbd>空白</kbd>閃避<kbd>Q</kbd>劍氣<kbd>E</kbd>落劍<kbd>F3</kbd>除錯面板
+    </div>
+  </div>
+</div>
+<div class="screen" id="dead"><div><h1 class="small">劍折</h1><div class="go">點擊重來</div></div></div>
+<div class="screen" id="win"><div><h1 class="small">山門已靜</h1><div class="sub">厲無咎的劍插在台心，沒有再響</div><div class="go">點擊再戰</div></div></div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

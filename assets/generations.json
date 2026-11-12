@@ -1,0 +1,26 @@
+{
+  "note": "Hyper3D Rodin generation ids, so a re-run never re-submits (and re-pays for) something that already exists.",
+  "base": {
+    "player": "433bbd9e-649d-4b7f-94f2-cd76af6e2e9c",
+    "melee": "26bd3063-c285-430d-ae08-93ea96911e56",
+    "ranged": "2cc5d524-6cfc-4a54-8786-62142f50e8c9",
+    "boss": "450b9de4-5855-46ff-a6da-a17af31d50b5",
+    "w_jian": "4fb774eb-8de7-499d-b7fa-44ddd9bf44ba",
+    "w_dao": "a1cd191d-3a41-4ce9-804b-5e088ce925c7",
+    "w_great": "c64160fe-a5bf-4c5b-9467-78eaafbb84ce"
+  },
+  "rigged": {
+    "player": "0b1bcb3b-84bc-4b5a-983a-70c4ca9c7577",
+    "melee": "cf694d54-81f7-4e14-93b0-7aa329563521",
+    "ranged": "9f8f61ec-7fa1-4891-a42e-8a1fa768bad5",
+    "boss": "3453d68f-4ef5-4226-9969-51bb398bf3a1"
+  },
+  "props": {
+    "lantern": "0f28fda4-539f-4836-9996-f4bf2dfd6435",
+    "pillar_tall": "c670fbb5-247b-4f87-bb94-65e6a749f785",
+    "pillar_broken": "c4b46dc9-2a8d-420c-b1ff-1a1b0ed312a4",
+    "pillar_fallen": "a9876469-6517-4e95-8e59-79c69c87af6e",
+    "burner": "fba798b8-38d7-4b3d-bdea-d5173c704379",
+    "gate": "80ce188c-ff27-435b-ba13-3e1a86391a9d"
+  }
+}
