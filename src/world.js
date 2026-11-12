@@ -70,7 +70,7 @@ export function buildWorld(scene) {
   // lights: cold moon key, warm lantern pools
   scene.add(new THREE.HemisphereLight(0x5b7fb5, 0x0b0f12, .85));
   const moon = new THREE.DirectionalLight(0xa9c4ff, 2.3); moon.position.set(-15, 26, -11); moon.castShadow = true;
-  moon.shadow.mapSize.set(2048, 2048); Object.assign(moon.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 4, far: 70 }); moon.shadow.bias = -.0006; moon.shadow.normalBias = .03; moon.shadow.radius = 3;
+  moon.shadow.mapSize.set(matchMedia('(pointer: coarse)').matches ? 1024 : 2048, matchMedia('(pointer: coarse)').matches ? 1024 : 2048); Object.assign(moon.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 4, far: 70 }); moon.shadow.bias = -.0006; moon.shadow.normalBias = .03; moon.shadow.radius = 3;
   scene.add(moon);
   const fill = new THREE.DirectionalLight(0xc9d6ff, .85); fill.position.set(5, 12, 16); scene.add(fill);   /* camera-side fill so characters read from above */
 

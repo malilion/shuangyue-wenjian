@@ -2,7 +2,8 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
 <title>霜月問劍</title>
 <style>
   :root { --kai: "Kaiti TC", "STKaiti", "BiauKai", "DFKai-SB", "Songti TC", "Noto Serif TC", serif; --ink: #e8eef0; --teal: #7fe3e6; --red: #d8483e; --gold: #e2c88a; }
@@ -65,6 +66,28 @@
   .screen .keys { margin-top: 38px; font-size: 14px; letter-spacing: .2em; line-height: 2; opacity: .72; }
   .screen .keys kbd { font: 12px ui-monospace, Menlo, monospace; border: 1px solid rgba(225, 235, 240, .45); padding: 2px 7px; margin: 0 4px 0 14px; letter-spacing: 0; }
   @keyframes breathe { 50% { opacity: .35; } }
+
+  /* ---- touch play (class set by src/touch.js) ---- */
+  body.touch { touch-action: none; -webkit-touch-callout: none; }
+  body.touch canvas#c { cursor: default; }
+  #stick { display: none; position: fixed; width: 124px; height: 124px; margin: -62px 0 0 -62px; border-radius: 50%; border: 1px solid rgba(225, 235, 240, .35); background: radial-gradient(circle, rgba(127, 227, 230, .08), rgba(6, 10, 14, .35)); pointer-events: none; z-index: 5; }
+  #knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; border-radius: 50%; background: rgba(190, 240, 242, .5); box-shadow: 0 0 14px rgba(127, 227, 230, .6); transform: translate(-50%, -50%); }
+  body.touch #skills { left: auto; right: 14px; right: calc(14px + env(safe-area-inset-right)); bottom: 12px; transform: none; display: grid; grid-template-columns: repeat(5, 56px); gap: 9px 8px; pointer-events: auto; }
+  body.touch .slotw { width: 56px; height: 56px; } body.touch .slotw em { display: none; }
+  body.touch .slot { width: 54px; height: 54px; } body.touch .slot.down { transform: scale(.9); filter: brightness(1.5); }
+  body.touch .slotw.ult { width: 56px; margin-left: 0; } body.touch .slotw.ult .slot { width: 54px; height: 54px; margin-top: 0; } body.touch .charge { width: 64px; height: 64px; margin-left: -32px; top: -5px; -webkit-mask: radial-gradient(circle, transparent 28px, #000 29px); mask: radial-gradient(circle, transparent 28px, #000 29px); }
+  /* second row, right to left: attack under the thumb, then dodge, block, flight, ultimate */
+  body.touch .slotw:has(#s-q) { order: 1; } body.touch .slotw:has(#s-e) { order: 2; } body.touch .slotw:has(#s-f) { order: 3; } body.touch .slotw:has(#s-c) { order: 4; } body.touch .slotw:has(#s-v) { order: 5; }
+  body.touch .slotw:has(#s-r) { order: 6; } body.touch .slotw:has(#s-fly) { order: 7; } body.touch .slotw:has(#s-blk) { order: 8; } body.touch .slotw:has(#s-dge) { order: 9; } body.touch .slotw:has(#s-atk) { order: 10; }
+  body.touch #pl { left: 18px; left: calc(18px + env(safe-area-inset-left)); top: 12px; width: 230px; } body.touch #pl .name { font-size: 12px; margin-bottom: 4px; }
+  body.touch #boss { top: 10px; width: 44vw; } body.touch #boss .name { font-size: 14px; margin-bottom: 4px; }
+  body.touch #counter { bottom: auto; top: 30%; } body.touch #banner { top: 18%; } body.touch #banner h2 { font-size: 26px; } body.touch #banner p { font-size: 13px; }
+  body.touch .screen h1 img { width: min(520px, 62vw); } body.touch .screen .go { margin-top: 18px; } body.touch .screen .keys { display: none; } body.touch .screen .sub { font-size: 13px; }
+  .touchtip { display: none; margin-top: 16px; font-size: 13px; letter-spacing: .2em; opacity: .7; } body.touch .touchtip { display: block; }
+  #rotate { display: none; position: fixed; inset: 0; z-index: 50; background: #05080c; place-items: center; text-align: center; font-size: 20px; letter-spacing: .4em; }
+  #rotate i { display: block; width: 58px; height: 96px; margin: 0 auto 26px; border: 2px solid var(--teal); border-radius: 10px; animation: turn 2.2s ease-in-out infinite; }
+  @keyframes turn { 0%, 25% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+  @media (orientation: portrait) { body.touch #rotate { display: grid; } }
 </style>
 <script type="importmap">{ "imports": { "three": "./node_modules/three/build/three.module.js", "three/addons/": "./node_modules/three/examples/jsm/" } }</script>
 </head>
@@ -105,6 +128,7 @@
     <h1><span>霜月問劍</span><img src="assets/ui/title.png" alt="霜月問劍" onload="this.parentNode.classList.add('img')" onerror="this.remove()"></h1>
     <div class="sub">廢棄山門 · 演武台</div>
     <div class="go" id="go">載入中</div>
+    <div class="touchtip">左側拖曳移動 · 右側按鈕出招 · 自動瞄準最近的敵人</div>
     <div class="keys">
       <kbd>W A S D</kbd>移動<kbd>左鍵</kbd>三段斬<kbd>右鍵</kbd>格擋，剛舉劍時接住即彈反<br>
       <kbd>空白</kbd>閃避<kbd>Q</kbd>劍氣<kbd>E</kbd>落劍<kbd>F</kbd>御劍追魂<kbd>C</kbd>劍陣環身<kbd>V</kbd>召喚靈獸<br>
@@ -114,6 +138,8 @@
 </div>
 <div class="screen" id="dead"><div><h1 class="small">劍折</h1><div class="go">點擊重來</div></div></div>
 <div class="screen" id="win"><div><h1 class="small">山門已靜</h1><div class="sub">厲無咎的劍插在台心，沒有再響</div><div class="go">點擊再戰</div></div></div>
+
+<div id="rotate"><div><i></i>請把手機橫過來</div></div>
 
 <script type="module" src="./src/main.js"></script>
 </body>

@@ -14,8 +14,8 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => { note('↑' + e.code); keys.delete(e.code); if (/^(Meta|Alt|Control)/.test(e.code)) keys.clear(); });
 for (const ev of ['blur', 'focus', 'pagehide']) addEventListener(ev, () => { note('[' + ev + ']'); keys.clear(); });
 document.addEventListener('visibilitychange', () => keys.clear());
-addEventListener('mousemove', (e) => { if (!(e.buttons & 2)) keys.delete('RMB'); mouse.x = e.clientX / innerWidth * 2 - 1; mouse.y = -(e.clientY / innerHeight) * 2 + 1; });
-addEventListener('mousedown', (e) => { if (e.button === 0) pressed.add('LMB'); if (e.button === 2) { pressed.add('RMB'); keys.add('RMB'); } });
+addEventListener('mousemove', (e) => { if (window.__touch) return; if (!(e.buttons & 2)) keys.delete('RMB'); mouse.x = e.clientX / innerWidth * 2 - 1; mouse.y = -(e.clientY / innerHeight) * 2 + 1; });
+addEventListener('mousedown', (e) => { if (window.__touch) return; if (e.button === 0) pressed.add('LMB'); if (e.button === 2) { pressed.add('RMB'); keys.add('RMB'); } });
 addEventListener('mouseup', (e) => { if (e.button === 2) keys.delete('RMB'); });
 addEventListener('contextmenu', (e) => e.preventDefault());
 export function endFrame() { pressed.clear(); }

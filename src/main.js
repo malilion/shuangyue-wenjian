@@ -7,6 +7,7 @@ import { FX, swordMesh } from './fx.js';
 import { makeBody, poseBody } from './body.js';
 import { initAudio, sfx, music, musicState, audioProbe } from './audio.js';
 import { loadGLB, makeCharBody, makeBeast } from './chars.js';
+import { T, initTouch, isPortrait } from './touch.js';
 
 const Q = new URLSearchParams(location.search), $ = (id) => document.getElementById(id);
 const R = createRender($('c')), { scene, camera } = R;
@@ -23,19 +24,20 @@ const inFan = (src, yaw, tgt, range, arc, pad = 0) => { const d = dist(src, tgt)
 const move = (a, dx, dz) => { a.pos.x += dx; a.pos.z += dz; clampToArena(a.pos, a.r); };
 const TEAL = [.4, 1.25, 1.4], AMBER = [1.6, .62, .16], CRIM = [1.7, .16, .22], GOLD = [1.8, 1.3, .55];
 
-const G = window.G = { loaded: 0, mode: 'title', phase: 'wave', time: 0, shake: 0, slow: 0, token: null, tokenCd: 0, enemies: [], projs: [], timers: [], boss: null, god: Q.has('god'), zoom: 1, flash: 0, shock: 0, fx, focus: new THREE.Vector3(0, 0, 3), intro: 0 };
+const G = window.G = { loaded: 0, mode: 'title', phase: 'wave', time: 0, shake: 0, slow: 0, tokens: [], tokenCd: 0, waveIdx: 0, enemies: [], projs: [], timers: [], boss: null, god: Q.has('god'), zoom: 1, flash: 0, shock: 0, fx, focus: new THREE.Vector3(0, 0, 3), intro: 0 };
 const after = (t, fn) => G.timers.push({ t, fn });
 
 // ---------- generated characters (fall back to the stand-in bodies when a file is missing) ----------
 const CH = {
   player: { h: 1.78, runTs: .95, weapon: 'w_jian', weaponLen: 1.2, clips: { idle: 'human_000090', guard: 'human_000040', run: 'human_000067', hit: 'human_000026', death: 'human_000068', roll: 'human_000042' } },
   melee: { h: 1.75, runTs: 1.65, borrow: (GL) => ({ run: [GL.ranged, 'human_000089'] }), weapon: 'w_dao', weaponLen: 1.05, clips: { idle: 'human_000071', guard: 'human_000040', run: 'human_000053', hit: 'human_000026', death: 'human_000011' } },
+  elite: { model: 'melee', h: 2.15, runTs: 1.25, weapon: 'w_dao', weaponLen: 1.35, borrow: (GL) => ({ run: [GL.ranged, 'human_000089'] }), clips: { idle: 'human_000040', guard: 'human_000040', hit: 'human_000026', death: 'human_000011' } },
   ranged: { h: 1.72, runTs: 1.6, clips: { idle: 'human_000090', guard: 'human_000090', run: 'human_000089', hit: 'human_000026', death: 'human_000081' } },
   boss: { h: 2.6, runTs: 1.3, weapon: 'w_great', weaponLen: 2.5, clips: { idle: 'human_000040', guard: 'human_000040', run: 'human_000089', hit: 'human_000003', death: 'human_000074' } },
 };
 const GL = {};
 if (!Q.has('standin')) await Promise.all(['player', 'melee', 'ranged', 'boss', 'w_jian', 'w_dao', 'w_great', 'lantern', 'pillar_tall', 'pillar_broken', 'pillar_fallen', 'burner', 'gate', 'beast'].map(async (n, i, all) => { GL[n] = await loadGLB(`assets/models/${n}.glb`); $('go').textContent = `載入中 ${++G.loaded} / ${all.length}`; }));
-const bodyFor = (kind, standIn) => (GL[kind] ? makeCharBody(GL[kind], { ...CH[kind], weapon: GL[CH[kind].weapon] || null, borrow: CH[kind].borrow ? CH[kind].borrow(GL) : null }) : makeBody(standIn));
+const bodyFor = (kind, standIn) => (GL[CH[kind].model || kind] ? makeCharBody(GL[CH[kind].model || kind], { ...CH[kind], weapon: GL[CH[kind].weapon] || null, borrow: CH[kind].borrow ? CH[kind].borrow(GL) : null }) : makeBody(standIn));
 G.GL = GL; world.useProps(GL);
 
 // ---------- player ----------
@@ -51,7 +53,13 @@ const P = G.player = {
 };
 scene.add(P.body.root);
 const ray = new THREE.Raycaster(), ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), aim = new THREE.Vector3(0, 0, 0), m2 = new THREE.Vector2();
-function updateAim() { m2.set(mouse.x, mouse.y); ray.setFromCamera(m2, camera); if (!ray.ray.intersectPlane(ground, aim)) aim.copy(P.pos); }
+function updateAim() {
+  if (T.on) {      /* no pointer on a phone: aim at the nearest enemy, else along the stick, else straight ahead */
+    let t = null, bd = 15; for (const e of G.enemies) if (!e.dead && e.spawnT <= 0) { const d = dist(P.pos, e.pos); if (d < bd) { bd = d; t = e; } }
+    if (t) aim.copy(t.pos); else if (T.mx || T.mz) aim.set(P.pos.x + T.mx * 6, 0, P.pos.z + T.mz * 6); else aim.set(P.pos.x + Math.sin(P.yaw) * 6, 0, P.pos.z + Math.cos(P.yaw) * 6); return;
+  }
+  m2.set(mouse.x, mouse.y); ray.setFromCamera(m2, camera); if (!ray.ray.intersectPlane(ground, aim)) aim.copy(P.pos);
+}
 const setBuf = (b) => { P.buf = b; P.bufT = .28; };
 const alive = () => G.enemies.filter((e) => !e.dead && e.spawnT <= 0);
 
@@ -89,8 +97,8 @@ function updatePlayer(dt) {
   if (P.state === 'dead') { P.t += dt; P.anim = 'dead'; P.animP = P.t / .7; return; }
   if (pressed.has('LMB')) setBuf('atk'); if (pressed.has('Space')) setBuf('dodge'); if (pressed.has('KeyQ')) setBuf('q'); if (pressed.has('KeyE')) setBuf('e'); if (pressed.has('KeyR')) setBuf('r'); if (pressed.has('KeyF')) setBuf('f'); if (pressed.has('KeyC')) setBuf('c'); if (pressed.has('KeyV')) setBuf('v');
   P.bufT -= dt; if (P.bufT <= 0) P.buf = null;
-  P.iframe = Math.max(0, P.iframe - dt); P.cdQ = Math.max(0, P.cdQ - dt); P.cdE = Math.max(0, P.cdE - dt); P.cdF = Math.max(0, P.cdF - dt); P.cdC = Math.max(0, P.cdC - dt); P.cdV = Math.max(0, P.cdV - dt); if (P.state !== 'fly') P.qi = Math.min(100, P.qi + 2 * dt); P.counterT = Math.max(0, P.counterT - dt);
-  const mx = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), mz = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0), ml = Math.hypot(mx, mz), aimYaw = angTo(P.pos, aim);
+  P.iframe = Math.max(0, P.iframe - dt); P.cdQ = Math.max(0, P.cdQ - dt); P.cdE = Math.max(0, P.cdE - dt); P.cdF = Math.max(0, P.cdF - dt); P.cdC = Math.max(0, P.cdC - dt); P.cdV = Math.max(0, P.cdV - dt); if (P.state !== 'fly') P.qi = Math.min(100, P.qi + 1.2 * dt); P.counterT = Math.max(0, P.counterT - dt);
+  const mx = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0) + T.mx, mz = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0) + T.mz, ml = Math.hypot(mx, mz), aimYaw = angTo(P.pos, aim);
   if (P.buf === 'dodge' && P.st >= 18 && P.state !== 'hurt' && P.state !== 'counter' && P.state !== 'dodge' && P.state !== 'ult') startDodge(mx, mz);     // dodge cuts through everything, hitstop included
   if (P.hitstop > 0) { P.hitstop -= dt; return; }
   if (P.kb.lengthSq() > .02) { move(P, P.kb.x * dt, P.kb.z * dt); P.kb.multiplyScalar(Math.exp(-9 * dt)); }
@@ -172,7 +180,7 @@ function updatePlayer(dt) {
         P.hitDone = true;
         if (P.skill === 'q') { const c = fx.crescent({ color: TEAL, radius: 1.9, arc: 1.9 }); G.projs.push({ team: 'p', pos: P.pos.clone().add(new THREE.Vector3(Math.sin(P.yaw), 0, Math.cos(P.yaw))), yaw: P.yaw, speed: 24, r: 1.5, dmg: 26, life: .7, pierce: true, hit: new Set(), fxh: c, color: TEAL }); sfx('heavy'); }
         else if (P.skill === 'f') { for (let i = -1; i <= 1; i++) { const g = new THREE.Group(), sm = swordMesh([.5, 1.6, 1.8], 1.3); sm.rotation.x = -Math.PI / 2; sm.position.z = .8; g.add(sm); scene.add(g);
-          G.projs.push({ team: 'p', homing: true, sword: true, pos: P.pos.clone(), yaw: P.yaw + i * .95, speed: 17, r: .75, dmg: 12, life: 2.7, pierce: true, hit: new Set(), hitT: .55, mesh: g, color: TEAL }); } sfx('swing'); sfx('ring'); }
+          G.projs.push({ team: 'p', homing: true, sword: true, pos: P.pos.clone(), yaw: P.yaw + i * .95, speed: 17, r: .75, dmg: 10, life: 2.7, pierce: true, hit: new Set(), hitT: .55, mesh: g, color: TEAL }); } sfx('swing'); sfx('ring'); }
         else { const d = Math.min(10, dist(P.pos, aim)), tp = new THREE.Vector3(P.pos.x + Math.sin(P.yaw) * d, 0, P.pos.z + Math.cos(P.yaw) * d); clampToArena(tp, .2); fx.telegraph({ kind: 'circle', pos: tp, radius: 3.3, dur: .5, color: TEAL }); fx.fallSword(tp, [.5, 1.7, 1.9], .5, 1.25);
           after(.5, () => { fx.ring(tp, 4.6, TEAL, .55); fx.crack(tp, 3.3, TEAL, 3); fx.burst(tp, 30, TEAL, 7, 5, .3, .7, .3); G.shake = .5; sfx('boom'); for (const e of [...G.enemies]) if (!e.dead && dist(tp, e.pos) < 3.3 + e.r) damageEnemy(e, 58, { from: tp, heavy: true, stop: .12, kb: 3, poise: 30 }); }); }
       }
@@ -197,7 +205,7 @@ function startUlt() {
     const tp = clampToArena(new THREE.Vector3((tgt ? tgt.pos.x : c.x) + Math.sin(a) * o, 0, (tgt ? tgt.pos.z : c.z) + Math.cos(a) * o), .2); P.pins.push(tp);
     fx.fallSword(tp, [.5, 1.7, 1.9], .16, .9, ULT.fin - P.t - .1);                                           /* it stays planted until the final cut */
     after(.16, () => { fx.ring(tp, 2.3, ICE, .32); fx.sparks({ x: tp.x, y: .5, z: tp.z }, Math.random() * TAU, 9, TEAL, 8, 3.2); G.shake = Math.max(G.shake, .24); sfx('hit'); sfx('ultHit');
-      for (const e of [...G.enemies]) if (!e.dead && dist(tp, e.pos) < 1.7 + e.r) damageEnemy(e, 13, { from: { x: tp.x - Math.sin(a), z: tp.z - Math.cos(a) }, heavy: true, stop: .05, kb: .3, poise: 4 }); });
+      for (const e of [...G.enemies]) if (!e.dead && dist(tp, e.pos) < 1.7 + e.r) damageEnemy(e, 11, { from: { x: tp.x - Math.sin(a), z: tp.z - Math.cos(a) }, heavy: true, stop: .05, kb: .3, poise: 4 }); });
   });
   for (let j = 0; j < ULT.cuts; j++) after(ULT.cut + j * ULT.cutGap, () => {                                /* the unseen cuts: he is gone, only lines of light cross the yard */
     const yaw = j * 2.4 + Math.random() * .5, o = Math.random() * 3, a = Math.random() * TAU, mid = { x: c.x + Math.sin(a) * o, z: c.z + Math.cos(a) * o };
@@ -213,7 +221,7 @@ function updateOrbit(dt) {
   orbit.forEach((s, i) => {
     s.visible = k > .01; if (!s.visible) return; const a = G.time * 5.2 + i * TAU / 4, r = 2.3; s.position.set(P.pos.x + Math.sin(a) * r, (P.y || 0) + .55 + Math.sin(G.time * 3 + i) * .1, P.pos.z + Math.cos(a) * r); s.rotation.set(Math.cos(a) * .3, 0, -Math.sin(a) * .3); s.scale.setScalar(Math.max(.01, k));
     if (Math.random() < dt * 18) fx.p.spawn(s.position.x, s.position.y + .8, s.position.z, 0, .3, 0, .3, .22, .35, 1.2, 1.4, 0, 1);
-    for (const e of [...G.enemies]) if (!e.dead && e.spawnT <= 0 && (e.orbitCd || 0) <= G.time && dist(s.position, e.pos) < .8 + e.r) { e.orbitCd = G.time + .45; if (damageEnemy(e, 9, { from: P.pos, stop: .03, kb: .7, poise: 3, noChain: true, stun: .14 })) { sfx('hit'); gainUlt(1); } }
+    for (const e of [...G.enemies]) if (!e.dead && e.spawnT <= 0 && (e.orbitCd || 0) <= G.time && dist(s.position, e.pos) < .8 + e.r) { e.orbitCd = G.time + .45; if (damageEnemy(e, 7, { from: P.pos, stop: .03, kb: .7, poise: 3, noChain: true, stun: .14 })) { sfx('hit'); gainUlt(1); } }
   });
   if (on) for (const b of G.projs) if (b.team === 'e' && b.cut && dist(b.pos, P.pos) < 2.8) { b.life = 0; fx.sparks({ x: b.pos.x, y: 1.1, z: b.pos.z }, b.yaw + Math.PI, 10, CRIM, 6, 1.5); }
 }
@@ -232,7 +240,7 @@ function updateBeast(dt) {
   const go = (a, step) => { b.pos.x += Math.sin(a) * step; b.pos.z += Math.cos(a) * step; clampToArena(b.pos, .5); };
   if (b.atk > 0) {
     b.atk -= dt; if (!b.hit && b.atk < .33) { b.hit = true; fx.slash({ pos: b.pos, yaw: b.yaw, radius: 2.7, arc: 1.7, dir: b.side, color: [.4, 1.2, 1.3], dur: .26, width: .5, y: .9 }); fx.slash({ pos: b.pos, yaw: b.yaw + .25 * b.side, radius: 2.3, arc: 1.5, dir: b.side, color: [.3, .9, 1], dur: .3, width: .4, y: 1.2 });
-      if (b.tgt && !b.tgt.dead && dist(b.pos, b.tgt.pos) < 2.9 + b.tgt.r && damageEnemy(b.tgt, 22, { from: b.pos, heavy: true, stop: .07, kb: 2, poise: 12 })) { sfx('hitHeavy'); gainUlt(3); G.shake = Math.max(G.shake, .22); } }
+      if (b.tgt && !b.tgt.dead && dist(b.pos, b.tgt.pos) < 2.9 + b.tgt.r && damageEnemy(b.tgt, 18, { from: b.pos, heavy: true, stop: .07, kb: 2, poise: 12 })) { sfx('hitHeavy'); gainUlt(3); G.shake = Math.max(G.shake, .22); } }
   } else if (t) {
     const reach = 1.9 + t.r, a = angTo(b.pos, t.pos); b.yaw = turn(b.yaw, a, dt * 11);
     if (bd > reach) { go(b.yaw, Math.min(12.5 * dt, bd - reach + .05)); b.body.play('run', { ts: 1.5 }); }
@@ -271,15 +279,17 @@ function damagePlayer(dmg, o) {
 
 // ---------- enemies ----------
 const KINDS = {
-  melee: { hp: 70, speed: 3.0, r: .5, body: { h: 1.72, bulk: 1.05, robe: 0x55594f, trim: 0x6a4a35, skin: 0x8d978a, talisman: true, weapon: { len: .95, w: .08, color: 0x6d6258 } } },
-  ranged: { hp: 46, speed: 2.9, r: .45, body: { h: 1.66, bulk: .86, robe: 0x40203f, trim: 0x8c1f2a, skin: 0xe6e2da, hat: true } },
-  boss: { hp: 2000, speed: 3.4, r: 1.0, poise: 100, body: { h: 2.55, bulk: 1.38, robe: 0x1d1418, trim: 0x7d1a22, skin: 0xa58d80, dark: 0x15131a, metal: 0x2b2a30, pauldron: true, horn: true, weapon: { len: 2.3, w: .17, color: 0x26242b, glow: 0x3a0508 } } },
+  elite: { hp: 190, speed: 2.7, r: .65, body: { h: 2.1, bulk: 1.25, robe: 0x5a3030, trim: 0x8c1f2a, skin: 0x9a8a80, talisman: true, weapon: { len: 1.2, w: .1, color: 0x6d6258 } } },
+  melee: { hp: 85, speed: 3.0, r: .5, body: { h: 1.72, bulk: 1.05, robe: 0x55594f, trim: 0x6a4a35, skin: 0x8d978a, talisman: true, weapon: { len: .95, w: .08, color: 0x6d6258 } } },
+  ranged: { hp: 55, speed: 2.9, r: .45, body: { h: 1.66, bulk: .86, robe: 0x40203f, trim: 0x8c1f2a, skin: 0xe6e2da, hat: true } },
+  boss: { hp: 2600, speed: 3.4, r: 1.0, poise: 100, body: { h: 2.55, bulk: 1.38, robe: 0x1d1418, trim: 0x7d1a22, skin: 0xa58d80, dark: 0x15131a, metal: 0x2b2a30, pauldron: true, horn: true, weapon: { len: 2.3, w: .17, color: 0x26242b, glow: 0x3a0508 } } },
 };
 function spawn(kind, x, z) {
   const D = KINDS[kind];
   const e = { kind, pos: new THREE.Vector3(x, 0, z), yaw: angTo({ x, z }, P.pos), r: D.r, hp: D.hp, maxHp: D.hp, speed: D.speed, poise: D.poise || 0, maxPoise: D.poise || 0, stun: 0, hitstop: 0, flash: 0, kb: new THREE.Vector3(),
     seq: null, si: 0, t: 0, cd: .6 + Math.random() * 1.6, anim: 'idle', animP: 0, phase: Math.random() * 6, idleT: Math.random() * 6, y: 0, spawnT: kind === 'boss' ? 0 : .9, strafe: Math.random() < .5 ? 1 : -1, dead: false, deadT: 0, body: bodyFor(kind, D.body), last: '', hits: 0, chain: 0 };
   scene.add(e.body.root);
+  if (kind === 'elite' && e.body.isChar) for (const m of e.body.mats) m.color.setRGB(1.25, .6, .52);
   if (kind !== 'boss') {
     const bg = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x06090c, opacity: .75, transparent: true, depthTest: false })), fill = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xc8463c, depthTest: false }));
     bg.center.set(0, .5); fill.center.set(0, .5); bg.scale.set(1.04, .1, 1); fill.scale.set(1, .06, 1); bg.renderOrder = 8; fill.renderOrder = 9; scene.add(bg, fill); e.bar = [bg, fill];
@@ -288,7 +298,7 @@ function spawn(kind, x, z) {
   G.enemies.push(e); return e;
 }
 G.spawn = spawn;
-function cancelSeq(e) { if (e.tele) { e.tele.cancel(); e.tele = null; } if (e.teles) { e.teles.forEach((t) => t.cancel()); e.teles = null; } e.seq = null; e.y = 0; if (G.token === e) { G.token = null; G.tokenCd = .5; } }
+function cancelSeq(e) { if (e.tele) { e.tele.cancel(); e.tele = null; } if (e.teles) { e.teles.forEach((t) => t.cancel()); e.teles = null; } e.seq = null; e.y = 0; const ti = G.tokens.indexOf(e); if (ti >= 0) { G.tokens.splice(ti, 1); G.tokenCd = .3; } }
 function startSeq(e, seq, name) { e.seq = seq; e.si = 0; e.t = 0; e.fresh = true; e.last = name || ''; }
 function runSeq(e, dt) {
   const s = e.seq[e.si]; if (!s) { const cd = e.seq.cd ?? 1; cancelSeq(e); e.cd = cd; return; }
@@ -315,19 +325,26 @@ const strike = (o) => ({
 });
 const rest = (dur) => ({ dur, anim: 'idle' });
 
-function meleeSeq() { const t = { kind: 'fan', radius: 2.7, arc: 1.9, color: AMBER }, s = [wind(.6, t, { dir: 1 }), strike({ range: 2.7, arc: 1.9, dmg: 11, dir: 1, step: .5 }), wind(.42, t, { dir: -1, track: .4 }), strike({ range: 2.7, arc: 1.9, dmg: 11, dir: -1, step: .7 }), rest(.9)]; s.cd = 1.2; return s; }
+function meleeSeq(e) {
+  if (e && e.kind === 'elite') {      /* the big one: three heavier swings, the last an overhead chop */
+    const t = { kind: 'fan', radius: 3.5, arc: 2.1, color: AMBER }, k = { range: 3.5, arc: 2.1, dmg: 17 };
+    const s = [wind(.62, t, { dir: 1 }), strike({ ...k, dir: 1, step: .7 }), wind(.42, t, { dir: -1, track: .4 }), strike({ ...k, dir: -1, step: .9 }), wind(.55, { kind: 'fan', radius: 4, arc: 1.1, color: AMBER }, { tilt: 1, track: .5 }), strike({ range: 4, arc: 1.1, dmg: 22, dir: -1, tilt: 1.35, step: 1, width: .55 }), rest(1.1)]; s.cd = 1.1; return s;
+  }
+  const t = { kind: 'fan', radius: 2.7, arc: 1.9, color: AMBER }, s = [wind(.52, t, { dir: 1 }), strike({ range: 2.7, arc: 1.9, dmg: 14, dir: 1, step: .5 }), wind(.38, t, { dir: -1, track: .4 }), strike({ range: 2.7, arc: 1.9, dmg: 14, dir: -1, step: .7 }), rest(.8)]; s.cd = 1; return s;
+}
 function fireBolt(e, yaw, o = {}) {
   const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(o.size ?? .22, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(...(o.color ?? [2.4, .35, .3])) })); scene.add(mesh);
-  G.projs.push({ team: 'e', src: e, pos: new THREE.Vector3(e.pos.x + Math.sin(yaw) * (e.r + .5), 0, e.pos.z + Math.cos(yaw) * (e.r + .5)), yaw, speed: o.speed ?? 11, r: o.r ?? .35, dmg: o.dmg ?? 10, life: 3, cut: true, mesh, color: CRIM }); sfx('bolt');
+  G.projs.push({ team: 'e', src: e, pos: new THREE.Vector3(e.pos.x + Math.sin(yaw) * (e.r + .5), 0, e.pos.z + Math.cos(yaw) * (e.r + .5)), yaw, speed: o.speed ?? 11, r: o.r ?? .35, dmg: o.dmg ?? 13, life: 3, cut: true, mesh, color: CRIM }); sfx('bolt');
 }
 function rangedSeq() { const s = [wind(.95, { kind: 'line', length: 13, width: .7, color: CRIM }, { track: .72 }), { dur: .3, anim: 'cast', start(e) { fireBolt(e, e.yaw); } }, rest(.5)]; s[0].anim = 'cast'; s.cd = 2.4 + Math.random(); return s; }
 
 function walk(e, ang, speed, dt) { move(e, Math.sin(ang) * speed * dt, Math.cos(ang) * speed * dt); e.anim = 'run'; e.phase += dt * speed * 2.6; }
 const AI = {
+  elite(e, dt) { AI.melee(e, dt); },
   melee(e, dt) {
     const d = dist(e.pos, P.pos), a = angTo(e.pos, P.pos); e.yaw = turn(e.yaw, a, dt * 8);
-    if (!G.token && G.tokenCd <= 0 && e.cd <= 0 && d < 10) G.token = e;                         // only one melee attacker at a time
-    if (G.token === e) { if (d > 2.0) walk(e, a, e.speed, dt); else startSeq(e, meleeSeq()); return; }
+    if (!G.tokens.includes(e) && G.tokens.length < 2 && G.tokenCd <= 0 && e.cd <= 0 && d < 10) G.tokens.push(e);       /* up to two melee attackers at once; the rest circle */
+    if (G.tokens.includes(e)) { if (d > (e.kind === 'elite' ? 2.5 : 2.0)) walk(e, a, e.speed, dt); else startSeq(e, meleeSeq(e)); return; }
     const want = 4.9, rad = d > want + .5 ? 1 : d < want - .5 ? -1 : 0, ta = a + e.strafe * Math.PI / 2;
     move(e, (Math.sin(a) * rad * .9 + Math.sin(ta) * .55) * e.speed * .6 * dt, (Math.cos(a) * rad * .9 + Math.cos(ta) * .55) * e.speed * .6 * dt); e.anim = 'run'; e.phase += dt * 6;
     if (Math.random() < dt * .3) e.strafe *= -1;
@@ -348,9 +365,9 @@ const AI = {
 };
 const BOSS = {
   combo(e) {
-    const f = e.p2 ? .82 : 1, t = { kind: 'fan', radius: 4.4, arc: 2.2, color: AMBER }, k = { range: 4.4, arc: 2.2, dmg: 17, width: .5 };
+    const f = e.p2 ? .82 : 1, t = { kind: 'fan', radius: 4.4, arc: 2.2, color: AMBER }, k = { range: 4.4, arc: 2.2, dmg: 20, width: .5 };
     const s = [wind(.7 * f, t, { dir: 1 }), strike({ ...k, dir: 1, step: 1.3 }), wind(.48 * f, t, { dir: -1, track: .45 }), strike({ ...k, dir: -1, step: 1.5 }),
-      wind(.62 * f, { kind: 'fan', radius: 5, arc: 1.1, color: AMBER }, { tilt: 1, track: .5 }), strike({ range: 5, arc: 1.1, dmg: 24, dir: -1, tilt: 1.35, step: 1.6, width: .6, dur: .3 }),
+      wind(.62 * f, { kind: 'fan', radius: 5, arc: 1.1, color: AMBER }, { tilt: 1, track: .5 }), strike({ range: 5, arc: 1.1, dmg: 28, dir: -1, tilt: 1.35, step: 1.6, width: .6, dur: .3 }),
       { dur: .05, anim: 'swing', start(b) { const c = fx.crescent({ color: [1.7, .3, .2], radius: 2.4, arc: 1.5 }); G.projs.push({ team: 'e', src: b, pos: b.pos.clone(), yaw: b.yaw, speed: 15, r: 1.2, dmg: 14, life: 1.1, fxh: c, color: CRIM, big: true }); fx.crack({ x: b.pos.x + Math.sin(b.yaw) * 3, z: b.pos.z + Math.cos(b.yaw) * 3 }, 2, CRIM, 2.5); G.shake = Math.max(G.shake, .4); } }, rest(1.2 * f)];
     s.cd = e.p2 ? .5 : .9; return s;
   },
@@ -358,13 +375,13 @@ const BOSS = {
     const s = [{ dur: e.p2 ? .9 : 1.05, anim: 'leap',
       start(b) { b.from = b.pos.clone(); b.to = clampToArena(P.pos.clone(), b.r); b.tele = fx.telegraph({ kind: 'circle', pos: b.to, radius: 3.7, dur: this.dur, color: CRIM }); },
       tick(b, p) { if (p > .28) { const u = (p - .28) / .72, q = u * u * (3 - 2 * u); b.pos.lerpVectors(b.from, b.to, q); b.y = Math.sin(u * Math.PI) * 3.4; b.yaw = angTo(b.from, b.to) || b.yaw; } },
-      end(b) { b.y = 0; b.tele = null; for (let i = 0; i < 8; i++) { const a = i * TAU / 8 + .3; fx.lineSlash({ x: b.pos.x + Math.sin(a) * 2.6, z: b.pos.z + Math.cos(a) * 2.6 }, a, 5, .5, [1.5, .3, .2], .4, .1); if (i % 2) fx.beam({ x: b.pos.x + Math.sin(a) * 3.3, z: b.pos.z + Math.cos(a) * 3.3 }, 6, .3, [.9, .16, .12], .6); } fx.ring(b.pos, 5.2, CRIM, .6); fx.crack(b.pos, 3.7, CRIM, 3.5); fx.burst(b.pos, 40, [1.2, .5, .3], 8, 5, .34, .8, .2); G.shake = .7; sfx('boom'); if (P.state !== 'fly' && dist(b.pos, P.pos) < 3.7 + P.r) damagePlayer(26, { from: b.pos, src: b, unblockable: true }); } }, rest(e.p2 ? .9 : 1.25)];
+      end(b) { b.y = 0; b.tele = null; for (let i = 0; i < 8; i++) { const a = i * TAU / 8 + .3; fx.lineSlash({ x: b.pos.x + Math.sin(a) * 2.6, z: b.pos.z + Math.cos(a) * 2.6 }, a, 5, .5, [1.5, .3, .2], .4, .1); if (i % 2) fx.beam({ x: b.pos.x + Math.sin(a) * 3.3, z: b.pos.z + Math.cos(a) * 3.3 }, 6, .3, [.9, .16, .12], .6); } fx.ring(b.pos, 5.2, CRIM, .6); fx.crack(b.pos, 3.7, CRIM, 3.5); fx.burst(b.pos, 40, [1.2, .5, .3], 8, 5, .34, .8, .2); G.shake = .7; sfx('boom'); if (P.state !== 'fly' && dist(b.pos, P.pos) < 3.7 + P.r) damagePlayer(30, { from: b.pos, src: b, unblockable: true }); } }, rest(e.p2 ? .9 : 1.25)];
     s.cd = .8; return s;
   },
   waves(e) {
     const n = e.p2 ? 5 : 3, sp = .3, s = [{ dur: .9, anim: 'cast',
       start(b) { b.yaw = angTo(b.pos, P.pos); b.teles = []; for (let i = 0; i < n; i++) b.teles.push(fx.telegraph({ kind: 'line', pos: b.pos, yaw: b.yaw + (i - (n - 1) / 2) * sp, length: 15, width: 1.7, dur: .9, color: AMBER })); },
-      end(b) { b.teles = null; for (let i = 0; i < n; i++) { const yaw = b.yaw + (i - (n - 1) / 2) * sp, c = fx.crescent({ color: [1.7, .3, .2], radius: 1.7, arc: 1.7 }); G.projs.push({ team: 'e', src: b, pos: b.pos.clone(), yaw, speed: 13, r: .95, dmg: 15, life: 1.6, fxh: c, color: CRIM, big: true }); } sfx('heavy'); G.shake = .2; } }, rest(.85)];
+      end(b) { b.teles = null; for (let i = 0; i < n; i++) { const yaw = b.yaw + (i - (n - 1) / 2) * sp, c = fx.crescent({ color: [1.7, .3, .2], radius: 1.7, arc: 1.7 }); G.projs.push({ team: 'e', src: b, pos: b.pos.clone(), yaw, speed: 13, r: .95, dmg: 17, life: 1.6, fxh: c, color: CRIM, big: true }); } sfx('heavy'); G.shake = .2; } }, rest(.85)];
     s.cd = .7; return s;
   },
   rain(e) {
@@ -384,7 +401,7 @@ BOSS.blink = (e) => {
     end(b) { b.tele = null; const mid = { x: (b.from.x + b.to.x) / 2, z: (b.from.z + b.to.z) / 2 }, L = dist(b.from, b.to);
       for (let i = 0; i < 5; i++) { const k = i / 4; fx.burst({ x: b.from.x + (b.to.x - b.from.x) * k, z: b.from.z + (b.to.z - b.from.z) * k }, 5, [.9, .12, .12], 2, 2, .3, .5, 1); }
       b.pos.copy(b.to); fx.lineSlash(mid, b.yaw, L + 2, 1, [2.2, .5, .35], .4, 1.2); fx.lineSlash(mid, b.yaw, L + 2, 2.6, [.4, .05, .06], .6, .1); fx.ring(b.to, 2.6, CRIM, .4); G.shake = Math.max(G.shake, .45); sfx('heavy'); sfx('ring');
-      if (P.state !== 'fly' && P.state !== 'dive' && segDist(P.pos, b.from, b.to) < 1.25 + P.r) damagePlayer(20, { from: b.from, src: b }); b.yaw += Math.PI; } },
+      if (P.state !== 'fly' && P.state !== 'dive' && segDist(P.pos, b.from, b.to) < 1.25 + P.r) damagePlayer(24, { from: b.from, src: b }); b.yaw += Math.PI; } },
     { dur: .25, anim: 'swing', dir: 1 }, rest(e.p2 ? .7 : .95)];
   s.cd = .6; return s;
 };
@@ -428,6 +445,7 @@ function damageEnemy(e, dmg, o = {}) {
   const c = { x: e.pos.x - Math.sin(a) * e.r * .8, y: boss ? 1.5 : 1.1, z: e.pos.z - Math.cos(a) * e.r * .8 };
   fx.sparks(c, a + (o.dir || 0) * 1.1, o.heavy ? 20 : 10, boss ? [2, 1.2, .6] : [1.2, 1.8, 1.1], o.heavy ? 12 : 8, .6);
   if (boss) { e.poise -= o.poise ?? (o.heavy ? 18 : 6); if (e.poise <= 0 && e.stun <= 0 && !e.invuln) breakBoss(e); if (!e.p2 && e.hp <= e.maxHp * .5 && e.hp > 0) phaseTwo(e); else if (e.p2 && !e.ulted && e.hp <= e.maxHp * .3 && e.hp > 0 && P.state !== 'ult') bossUlt(e); }
+  else if (e.kind === 'elite' && !o.heavy && !interrupted) { e.hitstop = Math.min(e.hitstop, .04); }      /* light hits do not stagger the elite: use heavy hits, skills or a parry */
   else if (e.kind === 'melee' && !o.heavy && !o.noChain && !interrupted && ++e.chain >= 3 && e.hp > 0) {      /* third light hit in a row: it shrugs it off and answers */
     e.chain = 0; e.stun = 0; cancelSeq(e); e.yaw = angTo(e.pos, P.pos); fx.ring(e.pos, 1.5, AMBER, .3);
     const s = [wind(.4, { kind: 'fan', radius: 2.9, arc: 2.1, color: AMBER }, { dir: -1, track: .7 }), strike({ range: 2.9, arc: 2.1, dmg: 13, dir: -1, step: .6 }), rest(.8)]; s.cd = 1; startSeq(e, s, 'riposte');
@@ -487,9 +505,14 @@ function showBanner(h, p, dur = 3) { bannerEl.children[0].textContent = h; banne
 function setMode(m) { G.mode = m; document.body.classList.toggle('play', m === 'play'); for (const id of ['title', 'dead', 'win']) $(id).classList.toggle('on', id === m); }
 function clearField() {
   for (const e of G.enemies) { scene.remove(e.body.root); if (e.bar) scene.remove(...e.bar); cancelSeq(e); } G.enemies.length = 0;
-  for (const b of G.projs) { if (b.mesh) scene.remove(b.mesh); else b.fxh.kill(); } G.projs.length = 0; G.timers.length = 0; G.token = null; G.boss = null;
+  for (const b of G.projs) { if (b.mesh) scene.remove(b.mesh); else b.fxh.kill(); } G.projs.length = 0; G.timers.length = 0; G.tokens.length = 0; G.boss = null;
 }
-function startWave() { for (const [k, x, z] of [['melee', -4.5, -3], ['melee', 4.5, -3.5], ['melee', 0, -7], ['ranged', -7.5, -7.5], ['ranged', 7.5, -7]]) spawn(k, x, z); showBanner('', '演武台上還有東西在動。', 3); }
+const WAVES = [['melee', 'melee', 'melee', 'melee', 'ranged', 'ranged'], ['melee', 'melee', 'melee', 'ranged', 'ranged', 'ranged', 'elite'], ['melee', 'melee', 'melee', 'melee', 'ranged', 'ranged', 'elite', 'elite']];
+function spawnWave(i) {      /* each batch rises in a loose ring, never right on top of the player */
+  G.waveIdx = i; const n = WAVES[i].length, off = Math.random() * TAU;
+  WAVES[i].forEach((k, j) => { let x = 0, z = 0; for (let t = 0; t < 12; t++) { const a = off + j / n * TAU + (Math.random() - .5) * .5, r = (k === 'ranged' ? 10.5 : 8) + Math.random() * 1.5; x = Math.sin(a) * r; z = Math.cos(a) * r; if (Math.hypot(x - P.pos.x, z - P.pos.z) > 5) break; } const p = clampToArena(new THREE.Vector3(x, 0, z), .7); after(j * .12, () => spawn(k, p.x, p.z)); });
+}
+function startWave() { spawnWave(0); showBanner('', '演武台上還有東西在動。', 3); }
 function startBoss() {
   G.phase = 'boss'; const b = G.boss = spawn('boss', 0, -11.5); b.cd = .4; G.intro = 2.8; $('boss').classList.add('on'); sfx('boom'); G.shake = .3; fx.ring(b.pos, 6, CRIM, 1.1);
   showBanner('厲無咎', '守在這裡的，是當年親手關上山門的人。', 3.6);
@@ -497,17 +520,20 @@ function startBoss() {
 function startGame(stage) {
   clearField(); Object.assign(P, { orbitT: 0, cdF: 0, cdC: 0, cdV: 0, lean: 0, ult: Q.has('ult') ? 100 : 0, hp: P.maxHp, st: 100, qi: 30, state: 'idle', hidden: false, t: 0, hitstop: 0, iframe: 1, buf: null, counterT: 0, cdQ: 0, cdE: 0, yaw: Math.PI, y: 0 }); P.pos.set(0, 0, 7); P.kb.set(0, 0, 0);
   G.bossUlt = false; if (beast) beast.on = false; world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); $('boss').classList.remove('on'); G.slow = 0; G.intro = 0; setMode('play');
-  if (stage === 'boss') startBoss(); else { G.phase = 'wave'; startWave(); }
+  if (stage === 'boss') startBoss(); else { G.phase = 'wave'; G.waveAt = G.time; startWave(); }
 }
 G.start = startGame;
 function flow(dt) {
-  if (G.phase === 'wave' && G.enemies.length && G.enemies.every((e) => e.dead)) { G.phase = 'lull'; P.hp = Math.min(P.maxHp, P.hp + 45); fx.ring(P.pos, 2.4, [.4, 1.4, .7], .8); after(2.4, startBoss); }
+  const left = G.enemies.filter((e) => !e.dead).length, pending = G.timers.length && G.enemies.length < WAVES[G.waveIdx].length;
+  if (G.phase === 'wave' && G.waveIdx < WAVES.length - 1 && left <= 1 && G.time - (G.waveAt || 0) > 3) { G.waveAt = G.time; spawnWave(G.waveIdx + 1); showBanner('', G.waveIdx === 1 ? '符紙又亮了一片。' : '還沒完。', 2.2); }
+  else if (G.phase === 'wave' && G.waveIdx === WAVES.length - 1 && left === 0 && G.time - (G.waveAt || 0) > 3) { G.phase = 'lull'; P.hp = Math.min(P.maxHp, P.hp + 35); fx.ring(P.pos, 2.4, [.4, 1.4, .7], .8); after(2.4, startBoss); }
   G.intro = Math.max(0, G.intro - dt);
   for (let i = G.enemies.length - 1; i >= 0; i--) { const e = G.enemies[i]; if (e.dead && e.kind !== 'boss' && e.deadT > 3.2) { scene.remove(e.body.root); G.enemies.splice(i, 1); } }
 }
 /* sound starts on the first click or key press of any kind (browsers require a gesture), not only on the title click */
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => initAudio(Q.has('mute')), true);
-addEventListener('mousedown', () => { if (!G.ready) return; if (G.mode !== 'play') { initAudio(Q.has('mute')); startGame(G.mode === 'win' ? undefined : (G.mode === 'dead' && G.boss ? 'boss' : Q.get('stage'))); pressed.delete('LMB'); } });
+initTouch(keys, pressed);
+addEventListener('pointerdown', () => { if (!G.ready || isPortrait()) return; if (G.mode !== 'play') { initAudio(Q.has('mute')); startGame(G.mode === 'win' ? undefined : (G.mode === 'dead' && G.boss ? 'boss' : Q.get('stage'))); pressed.delete('LMB'); } });
 
 // ---------- camera, hud ----------
 const CAM = new THREE.Vector3(0, 16.5, 11.8); camera.position.copy(G.focus).add(CAM); camera.lookAt(G.focus.x, 1, G.focus.z);
@@ -517,7 +543,7 @@ function updateCamera(dt) {
   else { ft.copy(P.pos); const b = G.boss; if (b && !b.dead) { const dx = b.pos.x - P.pos.x, dz = b.pos.z - P.pos.z, d = Math.hypot(dx, dz) || 1, k = G.intro > .6 ? Math.min(d * .75, 9) : Math.min(d * .22, 3); ft.x += dx / d * k; ft.z += dz / d * k; } ft.x += Math.max(-1, Math.min(1, (aim.x - P.pos.x) * .05)); ft.z += Math.max(-1, Math.min(1, (aim.z - P.pos.z) * .05)); }
   if (G.camO) { camera.position.copy(G.camO.pos); camera.lookAt(G.camO.look); return; }   /* test hook: close-up showcase camera */
   G.focus.lerp(ft, 1 - Math.exp(-dt * (G.intro > 0 ? 2.2 : 5))); G.shake = Math.max(0, G.shake - dt * 1.8);
-  const ulting = P.state === 'ult' && G.mode === 'play', zt = !ulting ? (P.state === 'fly' && G.mode === 'play' ? 1.1 : 1) : P.t < ULT.cut ? .82 : P.t < ULT.fin ? .94 : 1.18; G.zoom += (zt - G.zoom) * (1 - Math.exp(-dt * (zt > 1 ? 14 : 3.5)));
+  const ulting = P.state === 'ult' && G.mode === 'play', zt = (T.on ? .84 : 1) * (!ulting ? (P.state === 'fly' && G.mode === 'play' ? 1.1 : 1) : P.t < ULT.cut ? .82 : P.t < ULT.fin ? .94 : 1.18);      /* phones: camera a little closer */ G.zoom += (zt - G.zoom) * (1 - Math.exp(-dt * (zt > 1 ? 14 : 3.5)));
   const s = G.shake * G.shake * 1.6; camera.position.set(G.focus.x + CAM.x * G.zoom + (Math.random() - .5) * s, CAM.y * G.zoom + (Math.random() - .5) * s, G.focus.z + CAM.z * G.zoom + (Math.random() - .5) * s * .5);
   G.flash = Math.max(0, G.flash - dt * 3.4); const gu = R.grade.uniforms; gu.uFlash.value = G.flash * G.flash; gu.uExposure.value += ((ulting && P.t < ULT.fin ? (P.t < ULT.cut ? .56 : .34) : G.bossUlt ? .8 : 1.15) - gu.uExposure.value) * (1 - Math.exp(-dt * (ulting && P.t >= ULT.cut ? 22 : 6)));
   G.shock = Math.max(0, G.shock - dt * 2.2); gu.uShock.value = G.shock; gu.uMono.value += ((ulting && P.t >= ULT.cut - .04 && P.t < ULT.fin ? 1 : 0) - gu.uMono.value) * (1 - Math.exp(-dt * 30));
@@ -564,7 +590,7 @@ let last = performance.now();
 function frame(now, forced) {
   const real = forced ?? Math.min(.05, (now - last) / 1000); last = now; let dt = real;
   if (G.slow > 0) { G.slow -= real; dt *= .3; }
-  G.time += dt; update(dt); R.render(G.time); dbg(); endFrame();
+  G.time += dt; update(dt); if (!G.noRender) R.render(G.time); dbg(); endFrame();      /* G.noRender: logic-only stepping for long automated runs */
 }
 const dbg = debugPanel(() => `mode ${G.mode}/${G.phase}  state ${P.state}  t ${P.t.toFixed(2)}\npos ${P.pos.x.toFixed(1)},${P.pos.z.toFixed(1)}  rim ${(ARENA_R - Math.hypot(P.pos.x, P.pos.z)).toFixed(1)}\nhp ${P.hp | 0} st ${P.st | 0} qi ${P.qi | 0} ult ${P.ult | 0}  enemies ${alive().length}`);
 // test hooks: advance frames by hand (hidden tabs do not animate), fake a key press, read state
@@ -575,4 +601,4 @@ G.state = () => ({ mode: G.mode, phase: G.phase, p: { s: P.state, hp: Math.round
 G.ready = true; $('go').textContent = '點擊開始';
 if (Q.has('auto')) startGame(Q.get('stage'));
 /* G.paused freezes time but keeps drawing, so a hand-stepped moment can be screenshotted */
-(function loop(now) { if (G.paused) { last = now; R.render(G.time); } else frame(now); requestAnimationFrame(loop); })(performance.now());
+(function loop(now) { if (G.paused || isPortrait()) { last = now; R.render(G.time); } else frame(now); requestAnimationFrame(loop); })(performance.now());

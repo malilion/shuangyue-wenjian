@@ -27,6 +27,7 @@ const Grade = {
     }`,
 };
 
+const COARSE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 export function createRender(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -40,7 +41,7 @@ export function createRender(canvas) {
   const grade = new ShaderPass(Grade); composer.addPass(grade);
   const view = { h: 1 };
   function resize() {
-    const w = innerWidth, h = innerHeight, pr = Math.min(devicePixelRatio || 1, 1.5, Math.sqrt(3.2e6 / (w * h)));
+    const w = innerWidth, h = innerHeight, pr = Math.min(devicePixelRatio || 1, COARSE ? 1.25 : 1.5, Math.sqrt((COARSE ? 1.5e6 : 3.2e6) / (w * h)));      /* phones get a smaller pixel budget */
     renderer.setPixelRatio(pr); renderer.setSize(w, h, false); composer.setPixelRatio(pr); composer.setSize(w, h);
     camera.aspect = w / h; camera.updateProjectionMatrix(); view.h = h * pr;
   }
