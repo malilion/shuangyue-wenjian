@@ -11,7 +11,9 @@ const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder), cache = new M
 // single-file build: assets live in window.__A as data URLs (see tools/build.mjs); harmless in development
 if (typeof window !== 'undefined' && window.__A) THREE.DefaultLoadingManager.setURLModifier((u) => window.__A[String(u).replace(/^\.\//, '').split('?')[0]] || u);
 export function loadGLB(url) {
-  if (!cache.has(url)) cache.set(url, fetch(url, { method: 'HEAD' }).then((r) => (r.ok ? loader.loadAsync(url) : null)).catch(() => null));
+  /* a missing file (404) means 'use the stand-in'; a failed download of a file that exists is retried, since many large models load at once */
+  const tryLoad = (n) => loader.loadAsync(url).catch((err) => (n > 0 ? new Promise((res) => setTimeout(res, 600)).then(() => tryLoad(n - 1)) : (console.warn('model failed to load', url, err && err.message), null)));
+  if (!cache.has(url)) cache.set(url, fetch(url, { method: 'HEAD' }).then((r) => (r.ok ? tryLoad(2) : null)).catch(() => tryLoad(1)));
   return cache.get(url);
 }
 
@@ -140,4 +142,17 @@ export function makeBeast(gltf, o) {
     A.reset(); A.timeScale = ts; A.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity); A.clampWhenFinished = once; A.play(); if (now && now !== A) now.crossFadeTo(A, fade, false); now = A;
   }
   return { root, mats, play, update: (dt) => mixer.update(dt), bones: { root: rootBone && rootBone.name, head: head && head.name }, clipNames: Object.keys(gltf.userData.bclips) };
+}
+
+// A four-legged enemy (wolf): the same rig handling as the spirit beast but with its own textures, behind the body
+// interface the game expects. Animation states map onto the canine clip set.
+export function makeQuadBody(gltf, o) {
+  const b = makeBeast(gltf, { ...o, glow: 0x000000, glowI: 0 }); for (const m of b.mats) { m.transparent = false; m.opacity = 1; m.emissiveMap = null; } b.root.traverse((n) => { if (n.isMesh) n.castShadow = true; });
+  let last = '';
+  function pose(a, dt) {
+    const st = a.anim, fresh = st !== last; last = st;
+    if (st === 'run') b.play('run', { ts: 1.5 }); else if (st === 'swing') { if (fresh) b.play('lunge', { once: true, ts: 2.6, fade: .05 }); } else if (st === 'hurt') { if (fresh) b.play('hit', { once: true, ts: 1.8, fade: .05 }); } else if (st === 'dead') { if (fresh) b.play('death', { once: true, ts: 1.1, fade: .08 }); } else b.play('idle', { ts: st === 'windup' ? 2.2 : 1 });
+    b.update(dt);
+  }
+  return { root: b.root, mats: b.mats, s: o.s ?? .65, pose, isChar: true, weapon: { userData: {} } };
 }

@@ -53,6 +53,7 @@
   #banner.on { opacity: 1; }
   #banner h2 { margin: 0; font-size: 40px; font-weight: 400; letter-spacing: .6em; text-indent: .6em; }
   #banner p { margin: 12px 0 0; font-size: 16px; letter-spacing: .32em; opacity: .82; }
+  #fade { position: fixed; inset: 0; background: #020406; opacity: 0; pointer-events: none; z-index: 3; }
   #hurt { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 180px 40px rgba(190, 20, 20, .85); opacity: 0; }
 
   .screen { position: fixed; inset: 0; display: none; place-items: center; text-align: center; background: radial-gradient(ellipse at 50% 45%, rgba(5, 8, 12, .15), rgba(5, 8, 12, .82)); cursor: pointer; }
@@ -122,6 +123,7 @@
   </div>
 </div>
 <div id="hurt"></div>
+<div id="fade"></div>
 
 <div class="screen on" id="title">
   <div>
@@ -137,7 +139,7 @@
   </div>
 </div>
 <div class="screen" id="dead"><div><h1 class="small">劍折</h1><div class="go">點擊重來</div></div></div>
-<div class="screen" id="win"><div><h1 class="small">山門已靜</h1><div class="sub">厲無咎的劍插在台心，沒有再響</div><div class="go">點擊再戰</div></div></div>
+<div class="screen" id="win"><div><h1 class="small">劍塚無聲</h1><div class="sub">雪還在下，冰面上多了一把沒有名字的劍</div><div class="go">點擊再戰</div></div></div>
 
 <div id="rotate"><div><i></i>請把手機橫過來</div></div>
 

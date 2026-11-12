@@ -3,15 +3,16 @@ import * as THREE from 'three';
 import { keys, pressed, mouse, endFrame, debugPanel } from './input.js';
 import { createRender } from './render.js';
 import { buildWorld, clampToArena, ARENA_R } from './world.js';
+import { buildWorld2 } from './world2.js';
 import { FX, swordMesh } from './fx.js';
 import { makeBody, poseBody } from './body.js';
 import { initAudio, sfx, music, musicState, audioProbe } from './audio.js';
-import { loadGLB, makeCharBody, makeBeast } from './chars.js';
+import { loadGLB, makeCharBody, makeBeast, makeQuadBody } from './chars.js';
 import { T, initTouch, isPortrait } from './touch.js';
 
 const Q = new URLSearchParams(location.search), $ = (id) => document.getElementById(id);
 const R = createRender($('c')), { scene, camera } = R;
-const world = buildWorld(scene), fx = new FX(scene);
+const W1 = buildWorld(scene), W2 = buildWorld2(scene), fx = new FX(scene); let world = W1; W1.activate();
 const setView = () => fx.setView(R.view.h, camera.fov); setView(); addEventListener('resize', setView);
 
 // ---------- helpers (everything is 2D on the XZ plane; yaw 0 faces +Z) ----------
@@ -32,13 +33,23 @@ const CH = {
   player: { h: 1.78, runTs: .95, weapon: 'w_jian', weaponLen: 1.2, clips: { idle: 'human_000090', guard: 'human_000040', run: 'human_000067', hit: 'human_000026', death: 'human_000068', roll: 'human_000042' } },
   melee: { h: 1.75, runTs: 1.65, borrow: (GL) => ({ run: [GL.ranged, 'human_000089'] }), weapon: 'w_dao', weaponLen: 1.05, clips: { idle: 'human_000071', guard: 'human_000040', run: 'human_000053', hit: 'human_000026', death: 'human_000011' } },
   elite: { model: 'melee', h: 2.15, runTs: 1.25, weapon: 'w_dao', weaponLen: 1.35, borrow: (GL) => ({ run: [GL.ranged, 'human_000089'] }), clips: { idle: 'human_000040', guard: 'human_000040', hit: 'human_000026', death: 'human_000011' } },
+  frost: { model: 'ranged', h: 1.78, runTs: 1.6, clips: { idle: 'human_000090', guard: 'human_000090', run: 'human_000089', hit: 'human_000026', death: 'human_000081' } },
+  spirit: { h: 1.98, runTs: 1.5, weapon: 'w_jian', weaponLen: 1.35, borrow: (GL) => ({ run: [GL.ranged, 'human_000089'] }), clips: { idle: 'human_000040', guard: 'human_000040', hit: 'human_000026', death: 'human_000011' } },
+  wolf: { quad: true, length: 2.3, s: .62, clips: { idle: 'canine_000001', run: 'canine_000002', lunge: 'canine_000015', hit: 'canine_000013', death: 'canine_000018' } },
+  boss2: { h: 2.0, runTs: 1.9, weapon: 'w_jian', weaponLen: 1.5, clips: { idle: 'human_000090', guard: 'human_000040', run: 'human_000089', hit: 'human_000026', death: 'human_000081' } },
   ranged: { h: 1.72, runTs: 1.6, clips: { idle: 'human_000090', guard: 'human_000090', run: 'human_000089', hit: 'human_000026', death: 'human_000081' } },
   boss: { h: 2.6, runTs: 1.3, weapon: 'w_great', weaponLen: 2.5, clips: { idle: 'human_000040', guard: 'human_000040', run: 'human_000089', hit: 'human_000003', death: 'human_000074' } },
 };
 const GL = {};
-if (!Q.has('standin')) await Promise.all(['player', 'melee', 'ranged', 'boss', 'w_jian', 'w_dao', 'w_great', 'lantern', 'pillar_tall', 'pillar_broken', 'pillar_fallen', 'burner', 'gate', 'beast'].map(async (n, i, all) => { GL[n] = await loadGLB(`assets/models/${n}.glb`); $('go').textContent = `載入中 ${++G.loaded} / ${all.length}`; }));
-const bodyFor = (kind, standIn) => (GL[CH[kind].model || kind] ? makeCharBody(GL[CH[kind].model || kind], { ...CH[kind], weapon: GL[CH[kind].weapon] || null, borrow: CH[kind].borrow ? CH[kind].borrow(GL) : null }) : makeBody(standIn));
-G.GL = GL; world.useProps(GL);
+const S1 = ['player', 'melee', 'ranged', 'boss', 'w_jian', 'w_dao', 'w_great', 'lantern', 'pillar_tall', 'pillar_broken', 'pillar_fallen', 'burner', 'gate', 'beast'], S2 = ['boss2', 'spirit', 'wolf', 'crystal', 'stele', 'monument'];
+const loadSet = (names, onEach) => Promise.all(names.map(async (n) => { GL[n] = await loadGLB(`assets/models/${n}.glb`); onEach && onEach(); }));
+/* stage one is needed to start; stage two streams in behind it (or first, when the URL jumps straight there) */
+const wantS2 = /^(2|boss2)$/.test(Q.get('stage') || '');
+if (!Q.has('standin')) { await loadSet(wantS2 ? S1.concat(S2) : S1, () => { $('go').textContent = `載入中 ${++G.loaded} / ${wantS2 ? S1.length + S2.length : S1.length}`; }); if (!wantS2) loadSet(S2).then(() => { W2.useProps(GL); if (G.stage === 2) world.activate(); G.s2ready = true; }); else G.s2ready = true; }
+const bodyFor = (kind, standIn) => (CH[kind].quad && GL[kind] ? makeQuadBody(GL[kind], CH[kind]) : GL[CH[kind].model || kind] ? makeCharBody(GL[CH[kind].model || kind], { ...CH[kind], weapon: GL[CH[kind].weapon] || null, borrow: CH[kind].borrow ? CH[kind].borrow(GL) : null }) : makeBody(standIn));
+G.GL = GL; W1.useProps(GL); W2.useProps(GL);
+function setStage(n) { G.stage = n; world = n === 2 ? W2 : W1; W1.root.visible = n !== 2; W2.root.visible = n === 2; world.activate(); world.setMood(0); }
+setStage(1);
 
 // ---------- player ----------
 const ATK = [
@@ -263,7 +274,7 @@ function damagePlayer(dmg, o) {
     const c = { x: P.pos.x + Math.sin(a) * .7, y: 1.2, z: P.pos.z + Math.cos(a) * .7 };
     if (P.parryT < .24) {
       fx.sparks(c, a, 26, GOLD, 11, 1.4); fx.ring(P.pos, 2.4, GOLD, .4); sfx('parry'); G.shake = .22; G.slow = .12; gainUlt(14); P.qi = Math.min(100, P.qi + 18); P.hitstop = .08;
-      if (o.src && !o.src.dead) { P.counterT = 1.25; P.counterFrom = o.src; if (o.src.kind === 'boss') { o.src.poise -= 36; o.src.hitstop = .16; if (o.src.poise <= 0) breakBoss(o.src); else if (!o.proj) { cancelSeq(o.src); o.src.stun = .9; } } else if (!o.proj) { cancelSeq(o.src); o.src.stun = 1.5; o.src.hitstop = .12; } }
+      if (o.src && !o.src.dead) { P.counterT = 1.25; P.counterFrom = o.src; if (o.src.isBoss) { o.src.poise -= 36; o.src.hitstop = .16; if (o.src.poise <= 0) breakBoss(o.src); else if (!o.proj) { cancelSeq(o.src); o.src.stun = .9; } } else if (!o.proj) { cancelSeq(o.src); o.src.stun = 1.5; o.src.hitstop = .12; } }
       return 'parry';
     }
     P.st -= dmg * 1.5; P.kb.set(-Math.sin(a) * 4, 0, -Math.cos(a) * 4); fx.sparks(c, a, 9, [1.6, 1.5, 1.3], 6, 1.2); sfx('block'); G.shake = .1;
@@ -279,6 +290,10 @@ function damagePlayer(dmg, o) {
 
 // ---------- enemies ----------
 const KINDS = {
+  wolf: { hp: 62, speed: 5.6, r: .6, body: { h: 1.1, bulk: 1.3, robe: 0xd8dde2, trim: 0x9fb4c8, skin: 0xcfd6dc } },
+  spirit: { hp: 125, speed: 3.1, r: .55, body: { h: 1.95, bulk: 1.15, robe: 0x8fa9bd, trim: 0x5e7890, skin: 0x9fb4c8, weapon: { len: 1.2, w: .07, color: 0xbfe3f0 } } },
+  frost: { hp: 62, speed: 2.9, r: .45, body: { h: 1.7, bulk: .86, robe: 0x5e6f8c, trim: 0x9fd4ea, skin: 0xe6eef2, hat: true } },
+  boss2: { hp: 3000, speed: 4.0, r: .75, poise: 100, body: { h: 1.95, bulk: .95, robe: 0xe6e9f2, trim: 0x9a8fd0, skin: 0xe8dcd4, dark: 0xd8dde8, bun: true, weapon: { len: 1.4, w: .05, color: 0xdfeaff, glow: 0x2a2a66 } } },
   elite: { hp: 190, speed: 2.7, r: .65, body: { h: 2.1, bulk: 1.25, robe: 0x5a3030, trim: 0x8c1f2a, skin: 0x9a8a80, talisman: true, weapon: { len: 1.2, w: .1, color: 0x6d6258 } } },
   melee: { hp: 85, speed: 3.0, r: .5, body: { h: 1.72, bulk: 1.05, robe: 0x55594f, trim: 0x6a4a35, skin: 0x8d978a, talisman: true, weapon: { len: .95, w: .08, color: 0x6d6258 } } },
   ranged: { hp: 55, speed: 2.9, r: .45, body: { h: 1.66, bulk: .86, robe: 0x40203f, trim: 0x8c1f2a, skin: 0xe6e2da, hat: true } },
@@ -287,10 +302,11 @@ const KINDS = {
 function spawn(kind, x, z) {
   const D = KINDS[kind];
   const e = { kind, pos: new THREE.Vector3(x, 0, z), yaw: angTo({ x, z }, P.pos), r: D.r, hp: D.hp, maxHp: D.hp, speed: D.speed, poise: D.poise || 0, maxPoise: D.poise || 0, stun: 0, hitstop: 0, flash: 0, kb: new THREE.Vector3(),
-    seq: null, si: 0, t: 0, cd: .6 + Math.random() * 1.6, anim: 'idle', animP: 0, phase: Math.random() * 6, idleT: Math.random() * 6, y: 0, spawnT: kind === 'boss' ? 0 : .9, strafe: Math.random() < .5 ? 1 : -1, dead: false, deadT: 0, body: bodyFor(kind, D.body), last: '', hits: 0, chain: 0 };
+    seq: null, si: 0, t: 0, cd: .6 + Math.random() * 1.6, anim: 'idle', animP: 0, phase: Math.random() * 6, idleT: Math.random() * 6, y: 0, isBoss: kind === 'boss' || kind === 'boss2', spawnT: kind === 'boss' || kind === 'boss2' ? 0 : .9, strafe: Math.random() < .5 ? 1 : -1, dead: false, deadT: 0, body: bodyFor(kind, D.body), last: '', hits: 0, chain: 0 };
   scene.add(e.body.root);
   if (kind === 'elite' && e.body.isChar) for (const m of e.body.mats) m.color.setRGB(1.25, .6, .52);
-  if (kind !== 'boss') {
+  if (kind === 'frost' && e.body.isChar) for (const m of e.body.mats) m.color.setRGB(.6, .85, 1.25);
+  if (!e.isBoss) {
     const bg = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0x06090c, opacity: .75, transparent: true, depthTest: false })), fill = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xc8463c, depthTest: false }));
     bg.center.set(0, .5); fill.center.set(0, .5); bg.scale.set(1.04, .1, 1); fill.scale.set(1, .06, 1); bg.renderOrder = 8; fill.renderOrder = 9; scene.add(bg, fill); e.bar = [bg, fill];
     fx.ring(e.pos, 1.6, [.35, 1.1, .4], .8); fx.burst(e.pos, 16, [.12, .3, .14], 1.6, 2.2, .5, 1, .1);
@@ -311,16 +327,16 @@ function runSeq(e, dt) {
 const wind = (dur, tele, o = {}) => ({
   dur, anim: 'windup', dir: o.dir, tilt: o.tilt,
   start(e) { e.yaw = angTo(e.pos, P.pos); e.tele = fx.telegraph({ ...tele, pos: e.pos, yaw: e.yaw, dur }); },
-  tick(e, p, dt) { if (p < (o.track ?? .55)) { e.yaw = turn(e.yaw, angTo(e.pos, P.pos), dt * 7); e.tele && e.tele.set(e.pos, e.yaw); } if (e.kind === 'boss' && e.body.weapon.userData.blade) { const m = e.body.weapon.userData.blade; m.emissive.setRGB(.5 * p, .03 * p, .04 * p); } },
+  tick(e, p, dt) { if (p < (o.track ?? .55)) { e.yaw = turn(e.yaw, angTo(e.pos, P.pos), dt * 7); e.tele && e.tele.set(e.pos, e.yaw); } if (e.isBoss && e.body.weapon.userData.blade) { const m = e.body.weapon.userData.blade; if (e.kind === 'boss2') m.emissive.setRGB(.12 * p, .16 * p, .5 * p); else m.emissive.setRGB(.5 * p, .03 * p, .04 * p); } },
   end(e) { e.tele = null; },
 });
 const strike = (o) => ({
   dur: o.dur ?? .22, anim: 'swing', dir: o.dir, tilt: o.tilt,
   start(e) {
     if (o.step) move(e, Math.sin(e.yaw) * o.step, Math.cos(e.yaw) * o.step);
-    fx.slash({ pos: e.pos, yaw: e.yaw, radius: o.range, arc: o.arc, dir: o.dir ?? 1, tilt: o.tilt, color: o.color ?? AMBER, dur: .3, width: o.width ?? .45, y: e.kind === 'boss' ? 1.5 : 1.05 }); sfx(e.kind === 'boss' ? 'heavy' : 'swing');
+    fx.slash({ pos: e.pos, yaw: e.yaw, radius: o.range, arc: o.arc, dir: o.dir ?? 1, tilt: o.tilt, color: o.color ?? AMBER, dur: .3, width: o.width ?? .45, y: e.isBoss ? 1.5 : 1.05 }); sfx(e.isBoss ? 'heavy' : 'swing');
     if (P.state !== 'fly' && P.state !== 'dive' && inFan(e.pos, e.yaw, P.pos, o.range, o.arc, .35)) { const r = damagePlayer(o.dmg, { from: e.pos, src: e }); if (r === 'hit') e.hitstop = .07; }
-    if (e.kind === 'boss' && e.body.weapon.userData.blade) e.body.weapon.userData.blade.emissive.setRGB(0, 0, 0);
+    if (e.isBoss && e.body.weapon.userData.blade) e.body.weapon.userData.blade.emissive.setRGB(0, 0, 0);
   },
 });
 const rest = (dur) => ({ dur, anim: 'idle' });
@@ -330,17 +346,39 @@ function meleeSeq(e) {
     const t = { kind: 'fan', radius: 3.5, arc: 2.1, color: AMBER }, k = { range: 3.5, arc: 2.1, dmg: 17 };
     const s = [wind(.62, t, { dir: 1 }), strike({ ...k, dir: 1, step: .7 }), wind(.42, t, { dir: -1, track: .4 }), strike({ ...k, dir: -1, step: .9 }), wind(.55, { kind: 'fan', radius: 4, arc: 1.1, color: AMBER }, { tilt: 1, track: .5 }), strike({ range: 4, arc: 1.1, dmg: 22, dir: -1, tilt: 1.35, step: 1, width: .55 }), rest(1.1)]; s.cd = 1.1; return s;
   }
+  if (e && e.kind === 'spirit') {      /* frost wraith: two cuts, the second throws a blade of ice */
+    const t = { kind: 'fan', radius: 3.1, arc: 2, color: LAV }, k = { range: 3.1, arc: 2, dmg: 15, color: [.7, 1.1, 1.9] };
+    const s = [wind(.5, t, { dir: 1 }), strike({ ...k, dir: 1, step: .6 }), wind(.45, t, { dir: -1, track: .45 }), strike({ ...k, dir: -1, step: .8 }),
+      { dur: .05, anim: 'swing', start(b) { const c = fx.crescent({ color: [.7, 1.1, 2], radius: 1.7, arc: 1.5 }); G.projs.push({ team: 'e', src: b, pos: b.pos.clone(), yaw: b.yaw, speed: 13, r: .9, dmg: 12, life: 1, fxh: c, color: LAV, big: true }); } }, rest(.9)]; s.cd = 1.1; return s;
+  }
   const t = { kind: 'fan', radius: 2.7, arc: 1.9, color: AMBER }, s = [wind(.52, t, { dir: 1 }), strike({ range: 2.7, arc: 1.9, dmg: 14, dir: 1, step: .5 }), wind(.38, t, { dir: -1, track: .4 }), strike({ range: 2.7, arc: 1.9, dmg: 14, dir: -1, step: .7 }), rest(.8)]; s.cd = 1; return s;
 }
 function fireBolt(e, yaw, o = {}) {
-  const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(o.size ?? .22, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(...(o.color ?? [2.4, .35, .3])) })); scene.add(mesh);
-  G.projs.push({ team: 'e', src: e, pos: new THREE.Vector3(e.pos.x + Math.sin(yaw) * (e.r + .5), 0, e.pos.z + Math.cos(yaw) * (e.r + .5)), yaw, speed: o.speed ?? 11, r: o.r ?? .35, dmg: o.dmg ?? 13, life: 3, cut: true, mesh, color: CRIM }); sfx('bolt');
+  let mesh; if (o.sword) { mesh = new THREE.Group(); const sm = swordMesh(o.color, 1.2); sm.rotation.x = -Math.PI / 2; sm.position.z = .7; mesh.add(sm); } else mesh = new THREE.Mesh(new THREE.OctahedronGeometry(o.size ?? .22, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(...(o.color ?? [2.4, .35, .3])) })); scene.add(mesh);
+  G.projs.push({ team: 'e', src: e, pos: new THREE.Vector3(e.pos.x + Math.sin(yaw) * (e.r + .5), 0, e.pos.z + Math.cos(yaw) * (e.r + .5)), yaw, speed: o.speed ?? 11, r: o.r ?? .35, dmg: o.dmg ?? 13, life: 3, cut: true, mesh, sword: !!o.sword, color: o.color ? o.color.map((v) => Math.min(1.4, v)) : CRIM }); sfx('bolt');
 }
-function rangedSeq() { const s = [wind(.95, { kind: 'line', length: 13, width: .7, color: CRIM }, { track: .72 }), { dur: .3, anim: 'cast', start(e) { fireBolt(e, e.yaw); } }, rest(.5)]; s[0].anim = 'cast'; s.cd = 2.4 + Math.random(); return s; }
+function rangedSeq(e0) { const frost = e0 && e0.kind === 'frost', s = [wind(.95, { kind: 'line', length: 13, width: .7, color: frost ? LAV : CRIM }, { track: .72 }), { dur: .3, anim: 'cast', start(e) { if (frost) for (const k of [-.24, 0, .24]) fireBolt(e, e.yaw + k, { color: [.9, 1.3, 2.2], dmg: 11 }); else fireBolt(e, e.yaw); } }, rest(.5)]; s[0].anim = 'cast'; s.cd = 2.4 + Math.random(); return s; }
 
 function walk(e, ang, speed, dt) { move(e, Math.sin(ang) * speed * dt, Math.cos(ang) * speed * dt); e.anim = 'run'; e.phase += dt * speed * 2.6; }
+const LAV = [1.15, .8, 1.9];
 const AI = {
-  elite(e, dt) { AI.melee(e, dt); },
+  elite(e, dt) { AI.melee(e, dt); }, spirit(e, dt) { AI.melee(e, dt); }, frost(e, dt) { AI.ranged(e, dt); },
+  wolf(e, dt) {      /* circles fast, then marks a line and pounces along it */
+    const d = dist(e.pos, P.pos), a = angTo(e.pos, P.pos);
+    if (e.cd <= 0 && d < 7.5 && d > 2) { const s = [
+      { dur: .5, anim: 'windup', start(b) { b.yaw = angTo(b.pos, P.pos); b.tele = fx.telegraph({ kind: 'line', pos: b.pos, yaw: b.yaw, length: 7, width: 1.6, dur: .5, color: AMBER }); }, tick(b, p, dt2) { if (p < .6) { b.yaw = turn(b.yaw, angTo(b.pos, P.pos), dt2 * 6); b.tele && b.tele.set(b.pos, b.yaw); } }, end(b) { b.tele = null; } },
+      { dur: .3, anim: 'swing', start(b) { b.bit = false; sfx('swing'); }, tick(b, p, dt2) { move(b, Math.sin(b.yaw) * 22 * dt2, Math.cos(b.yaw) * 22 * dt2); if (!b.bit && P.state !== 'fly' && P.state !== 'dive' && dist(b.pos, P.pos) < 1.35) { b.bit = true; fx.slash({ pos: b.pos, yaw: b.yaw, radius: 1.8, arc: 1.6, dir: 1, color: [1.2, 1.3, 1.5], dur: .22, width: .5, y: .8 }); damagePlayer(12, { from: b.pos, src: b }); } } },
+      rest(.55)]; s.cd = 2 + Math.random() * 1.6; startSeq(e, s, 'pounce'); return; }
+    const ta = a + e.strafe * 1.25, rad = d > 6 ? 1 : d < 4 ? -1 : 0; e.yaw = turn(e.yaw, rad ? a + (rad < 0 ? Math.PI : 0) * 0 : ta, dt * 9);
+    move(e, (Math.sin(a) * rad * .8 + Math.sin(ta) * .7) * e.speed * dt, (Math.cos(a) * rad * .8 + Math.cos(ta) * .7) * e.speed * dt); e.anim = 'run'; e.phase += dt * 10; if (Math.random() < dt * .5) e.strafe *= -1;
+  },
+  boss2(e, dt) {      /* keeps her distance and fights with thrown swords; closes only by blinking in */
+    const d = dist(e.pos, P.pos), a = angTo(e.pos, P.pos), p2 = e.p2; e.yaw = turn(e.yaw, a, dt * 8);
+    if (e.cd > 0) { const ta = a + e.strafe * Math.PI / 2, rad = d > 9 ? 1 : d < 5 ? -1 : 0; move(e, (Math.sin(a) * rad + Math.sin(ta) * .7) * e.speed * .75 * dt, (Math.cos(a) * rad + Math.cos(ta) * .7) * e.speed * .75 * dt); e.anim = 'run'; e.phase += dt * 8; if (Math.random() < dt * .5) e.strafe *= -1; return; }
+    const opts = d < 5 ? [['blink', 2], ['ring', 2.2], ['volley', 1]] : [['volley', 3], ['ring', 1.4], ['blink', 2.2]]; if (p2) opts.push(['pillars', e.rainCd > 0 ? 0 : 2.4]);
+    let tot = 0; for (const o of opts) { if (o[0] === e.last) o[1] *= .25; tot += o[1]; } let r = Math.random() * tot, pick = opts[0][0]; for (const o of opts) { r -= o[1]; if (r <= 0) { pick = o[0]; break; } }
+    startSeq(e, BOSS2[pick](e), pick);
+  },
   melee(e, dt) {
     const d = dist(e.pos, P.pos), a = angTo(e.pos, P.pos); e.yaw = turn(e.yaw, a, dt * 8);
     if (!G.tokens.includes(e) && G.tokens.length < 2 && G.tokenCd <= 0 && e.cd <= 0 && d < 10) G.tokens.push(e);       /* up to two melee attackers at once; the rest circle */
@@ -351,7 +389,7 @@ const AI = {
   },
   ranged(e, dt) {
     const d = dist(e.pos, P.pos), a = angTo(e.pos, P.pos); e.yaw = turn(e.yaw, a, dt * 8);
-    if (e.cd <= 0 && d < 13) { startSeq(e, rangedSeq()); return; }
+    if (e.cd <= 0 && d < 13) { startSeq(e, rangedSeq(e)); return; }
     if (d < 5.5) walk(e, a + Math.PI + e.strafe * .5, e.speed, dt); else if (d > 10.5) walk(e, a, e.speed, dt); else { walk(e, a + e.strafe * Math.PI / 2, e.speed * .45, dt); if (Math.random() < dt * .4) e.strafe *= -1; }
   },
   boss(e, dt) {
@@ -430,23 +468,79 @@ function bossUlt(e) {
   ];
   seq.cd = .4; startSeq(e, seq, 'ult');
 }
+// ---------- stage two boss: Shuang Wan, keeper of the Sword Tomb. She fights at range with thrown swords.
+const skyDrop = (tp, r, dmg, lead, scale, col = LAV) => { fx.telegraph({ kind: 'circle', pos: tp, radius: r, dur: lead, color: col }); fx.fallSword(tp, [1.2, 1.3, 2.2], lead, scale, .7);
+  after(lead, () => { fx.ring(tp, r * 1.4, col, .5); fx.crack(tp, r, [.6, .8, 1.6], 2.6); fx.burst(tp, 14, [.7, .9, 1.8], 6, 5, .26, .7, .2); fx.beam(tp, 6, r * .3, [.3, .4, .9], .6); G.shake = Math.max(G.shake, r > 3 ? .9 : .26); sfx('boom'); if (dist(tp, P.pos) < r + P.r * .5) damagePlayer(dmg, { from: tp, unblockable: true }); }); };
+// an expanding ring of swords: one hit per ring, passed by a well-timed dodge
+const rings = [];
+function launchRing(pos, o = {}) {
+  const g = new THREE.Group(), n = 22; for (let i = 0; i < n; i++) { const sm = swordMesh([1.1, 1.2, 2.1], 1.1), a = i / n * TAU; sm.rotation.set(Math.PI / 2, 0, 0); const h = new THREE.Group(); h.rotation.y = a; sm.position.set(0, 1, 1); h.add(sm); g.add(h); }
+  g.position.set(pos.x, 0, pos.z); scene.add(g); rings.push({ g, pos: pos.clone(), r: o.r0 ?? 1.2, speed: o.speed ?? 8.5, max: o.max ?? 15, dmg: o.dmg ?? 16, hit: false }); sfx('heavy'); sfx('ring');
+}
+function updateRings(dt) {
+  for (let i = rings.length - 1; i >= 0; i--) { const R1 = rings[i]; R1.r += R1.speed * dt; R1.g.scale.set(R1.r, 1, R1.r); R1.g.rotation.y += dt * .6; for (const h of R1.g.children) h.children[0].scale.set(1 / R1.r, 1 / R1.r, 1);      /* undo the ring's stretch so each sword keeps its shape */
+    if (Math.random() < dt * 60) { const a = Math.random() * TAU; fx.p.spawn(R1.pos.x + Math.sin(a) * R1.r, 1, R1.pos.z + Math.cos(a) * R1.r, 0, .5, 0, .35, .22, .7, .9, 1.8, 0, 1); }
+    if (!R1.hit && Math.abs(dist(R1.pos, P.pos) - R1.r) < .75) { const res = damagePlayer(R1.dmg, { from: R1.pos, unblockable: true }); if (res === 'hit') R1.hit = true; }
+    if (R1.r > R1.max) { scene.remove(R1.g); rings.splice(i, 1); } }
+}
+const BOSS2 = {
+  volley(e) {      /* a string of thrown swords, each aimed where you are when it leaves her hand */
+    const n = e.p2 ? 7 : 5, s = [{ dur: .55, anim: 'cast', start(b) { b.yaw = angTo(b.pos, P.pos); b.tele = fx.telegraph({ kind: 'line', pos: b.pos, yaw: b.yaw, length: 14, width: .9, dur: .55, color: LAV }); fx.swordHalo({ pos: b.pos, n, radius: 1.5, y: 2.4, appear: .4, release: Array.from({ length: n }, (_, i) => .55 + i * .17) }); }, tick(b, p, dt) { b.yaw = turn(b.yaw, angTo(b.pos, P.pos), dt * 8); b.tele && b.tele.set(b.pos, b.yaw); }, end(b) { b.tele = null; } },
+      { dur: n * .17 + .1, anim: 'cast', start(b) { b.shot = 0; }, tick(b, p, dt) { b.yaw = turn(b.yaw, angTo(b.pos, P.pos), dt * 10); while (b.shot < n && b.t >= b.shot * .17) { b.shot++; fireBolt(b, b.yaw + (Math.random() - .5) * .08, { sword: true, color: [1.1, 1.2, 2.2], speed: 18, dmg: 12, r: .45 }); } } }, rest(e.p2 ? .5 : .75)];
+    s.cd = .5; return s;
+  },
+  ring(e) {
+    const s = [{ dur: .85, anim: 'cast', start(b) { b.tele = fx.telegraph({ kind: 'circle', pos: b.pos, radius: 3, dur: .85, color: LAV }); fx.sigil(b.pos, 3.2, [.7, .6, 1.6], 1.4); sfx('ultCharge'); }, end(b) { b.tele = null; launchRing(b.pos); if (b.p2) after(.55, () => { if (!b.dead) launchRing(b.pos, { speed: 10.5 }); }); G.shake = Math.max(G.shake, .35); } }, rest(e.p2 ? .9 : 1.1)];
+    s.cd = .6; return s;
+  },
+  blink(e) {      /* gone from where she stood, behind you with the blade already moving */
+    const t = { kind: 'fan', radius: 3.7, arc: 2.3, color: LAV }, k = { range: 3.7, arc: 2.3, dmg: 19, color: [.8, 1.1, 2] };
+    const s = [{ dur: .22, anim: 'cast', start(b) { fx.burst(b.pos, 18, [.7, .9, 1.8], 4, 4, .3, .5, .8); fx.ring(b.pos, 2.2, LAV, .35); const a = P.yaw + Math.PI, to = clampToArena(new THREE.Vector3(P.pos.x + Math.sin(a) * 2.6, 0, P.pos.z + Math.cos(a) * 2.6), b.r); fx.lineSlash({ x: (b.pos.x + to.x) / 2, z: (b.pos.z + to.z) / 2 }, angTo(b.pos, to), dist(b.pos, to), .4, [.6, .7, 1.6], .3, 1.2); b.pos.copy(to); b.yaw = angTo(b.pos, P.pos); fx.burst(b.pos, 18, [.7, .9, 1.8], 4, 4, .3, .5, .8); sfx('dodge'); } },
+      wind(e.p2 ? .36 : .44, t, { dir: 1, track: .5 }), strike({ ...k, dir: 1, step: .6 }), wind(.3, t, { dir: -1, track: .4 }), strike({ ...k, dir: -1, step: .8 }), rest(.8)];
+    s.cd = .5; return s;
+  },
+  pillars(e) {
+    e.rainCd = 10; const s = [{ dur: 2.2, anim: 'cast', start(b) { fx.sigil(b.pos, 4, [.7, .6, 1.6], 2.4); for (let i = 0; i < 6; i++) after(.15 + i * .32, () => { if (b.dead || P.state === 'dead') return; const o = i ? Math.random() * 1.8 : 0, a = Math.random() * TAU; skyDrop(clampToArena(new THREE.Vector3(P.pos.x + Math.sin(a) * o, 0, P.pos.z + Math.cos(a) * o), .2), 2.2, 16, .85, .9); }); } }, rest(.6)];
+    s.cd = .6; return s;
+  },
+};
+// Her ultimate, once, at 30%: she rises over the centre and buries the yard in rows of swords - alternate lanes, then crossways, faster each time -
+// and ends with three rings. Then she has to land.
+function boss2Ult(e) {
+  e.ulted = true; cancelSeq(e); e.stun = 0; e.invuln = true;
+  const volley = (i, lead) => { const horiz = i % 2 === 0, lanes = []; for (let k = -5; k <= 5; k++) if ((k + i) % 2 === 0) lanes.push(k * 2.6);
+    for (const c of lanes) { const pos = horiz ? { x: -14.5, z: c } : { x: c, z: -14.5 }, yaw = horiz ? Math.PI / 2 : 0; fx.telegraph({ kind: 'line', pos, yaw, length: 29, width: 2.5, dur: lead, color: LAV });
+      after(lead, () => { const mid = horiz ? { x: 0, z: c } : { x: c, z: 0 }; fx.lineSlash(mid, yaw, 29, 1.5, [1.3, 1.5, 2.6], .34, .9); fx.lineSlash(mid, yaw, 29, 2.6, [.2, .25, .6], .5, .08);
+        for (let q = -2; q <= 2; q++) { const pt = horiz ? { x: q * 5.2 + (Math.random() - .5) * 2, z: c } : { x: c, z: q * 5.2 + (Math.random() - .5) * 2 }; if (Math.hypot(pt.x, pt.z) < 13.4) { fx.fallSword(pt, [1.2, 1.3, 2.2], .05, .8, .5); fx.beam(pt, 5, .28, [.3, .4, .9], .5); } }
+        const off = horiz ? P.pos.z - c : P.pos.x - c; if (Math.abs(off) < 1.1) damagePlayer(15, { from: horiz ? { x: P.pos.x, z: c - Math.sign(off || 1) } : { x: c - Math.sign(off || 1), z: P.pos.z }, unblockable: true }); }); }
+    after(lead, () => { G.shake = Math.max(G.shake, .4); sfx('heavy'); sfx('ring'); }); };
+  const leads = [1.05, .95, .9, .82, .76, .7, .66]; let at = .3; const times = leads.map((l) => { const t0 = at; at += l * .92; return t0; });
+  const seq = [
+    { dur: .6, anim: 'leap', start(b) { b.from = b.pos.clone(); sfx('roar'); showBanner('', '「此處葬劍，不葬人。你可以例外。」', 3.4); fx.burst(b.pos, 24, [.7, .9, 1.8], 5, 5, .3, .6, .8); }, tick(b, p) { const q = p * p * (3 - 2 * p); b.pos.set(b.from.x * (1 - q), 0, b.from.z * (1 - q)); b.y = 2.6 * q; } },
+    { dur: 1.3, anim: 'cast', start(b) { G.bossUlt = true; b.y = 2.6; fx.moon(b.pos, 13.3, [.7, .7, 1.2], at + 4.5); fx.sigil(b.pos, 13.3, [.75, .6, 1.7], at + 4.5); sfx('ultCharge'); fx.swordHalo({ pos: b.pos, n: 16, radius: 3.2, y: 5.4, appear: 1, spin: 1.6, release: Array.from({ length: 16 }, (_, i) => 1.3 + at * i / 16) }); }, tick(b, p, dt) { b.y = 2.6 + Math.sin(G.time * 2) * .15; b.yaw += dt * 3; } },
+    { dur: at + .5, anim: 'cast', start(b) { leads.forEach((l, i) => after(times[i], () => { if (!b.dead && P.state !== 'dead') volley(i, l); })); }, tick(b, p, dt) { b.y = 2.6 + Math.sin(G.time * 2) * .15; b.yaw = turn(b.yaw, angTo(b.pos, P.pos), dt * 4); } },
+    { dur: 1.5, anim: 'leap', start(b) { for (let i = 0; i < 3; i++) after(.1 + i * .45, () => { if (!b.dead) launchRing(b.pos, { speed: 9 + i }); }); }, tick(b, p) { b.y = 2.6 * (1 - p * p); }, end(b) { b.y = 0; fx.ring(b.pos, 6, LAV, .6); fx.crack(b.pos, 3, [.6, .8, 1.6], 4); G.shake = .5; } },
+    { dur: .2, anim: 'hurt', end(b) { b.invuln = false; G.bossUlt = false; b.stun = 3.4; b.poise = b.maxPoise; fx.ring(b.pos, 4, GOLD, .6); } },
+  ];
+  seq.cd = .4; startSeq(e, seq, 'ult');
+}
 function breakBoss(e) { cancelSeq(e); e.stun = 2.6; e.poise = e.maxPoise; fx.ring(e.pos, 4, GOLD, .6); G.shake = .5; G.slow = .25; sfx('parry'); }
 function phaseTwo(e) {
-  e.p2 = true; cancelSeq(e); e.stun = 0; e.invuln = true; world.setMood(1); R.grade.uniforms.uTint.value.set(.05, 0, 0);
-  startSeq(e, [{ dur: 1.5, anim: 'cast', start(b) { sfx('roar'); fx.ring(b.pos, 9, CRIM, .9); fx.burst(b.pos, 50, CRIM, 9, 6, .3, 1); G.shake = .6; sfx('boom'); const a = angTo(b.pos, P.pos); if (dist(b.pos, P.pos) < 7) P.kb.set(Math.sin(a) * 16, 0, Math.cos(a) * 16); showBanner('', '「三十年了。還有人敢上這座山。」', 3.2); }, end(b) { b.invuln = false; } }], 'p2'); e.seq.cd = .3;
+  const two = e.kind === 'boss2', pc = two ? LAV : CRIM; e.p2 = true; cancelSeq(e); e.stun = 0; e.invuln = true; world.setMood(1); R.grade.uniforms.uTint.value.set(two ? .02 : .05, 0, two ? .05 : 0);
+  startSeq(e, [{ dur: 1.5, anim: 'cast', start(b) { sfx('roar'); fx.ring(b.pos, 9, CRIM, .9); fx.burst(b.pos, 50, CRIM, 9, 6, .3, 1); G.shake = .6; sfx('boom'); const a = angTo(b.pos, P.pos); if (dist(b.pos, P.pos) < 7) P.kb.set(Math.sin(a) * 16, 0, Math.cos(a) * 16); showBanner('', b.kind === 'boss2' ? '「劍還認得你。可惜我不認得。」' : '「三十年了。還有人敢上這座山。」', 3.2); }, end(b) { b.invuln = false; } }], 'p2'); e.seq.cd = .3;
 }
 
 function damageEnemy(e, dmg, o = {}) {
   if (e.dead || e.invuln || e.spawnT > 0) return false;
-  const boss = e.kind === 'boss', a = angTo(o.from, e.pos); let interrupted = false;
+  const boss = e.isBoss, a = angTo(o.from, e.pos); let interrupted = false;
   if (!boss && e.seq && e.seq[e.si] && e.seq[e.si].anim !== 'idle' && e.si % 2 === 0 && e.t / e.seq[e.si].dur > .4) { interrupted = true; dmg *= 1.35; }   // hit late in the wind-up: the move breaks
   if (boss && e.stun > 0) dmg *= 1.3;
   e.hp -= dmg; e.hitstop = o.stop ?? .07; e.flash = .14; e.hits++; if (G.time - (e.lastHit || 0) > 1.2) e.chain = 0; e.lastHit = G.time;
   const c = { x: e.pos.x - Math.sin(a) * e.r * .8, y: boss ? 1.5 : 1.1, z: e.pos.z - Math.cos(a) * e.r * .8 };
   fx.sparks(c, a + (o.dir || 0) * 1.1, o.heavy ? 20 : 10, boss ? [2, 1.2, .6] : [1.2, 1.8, 1.1], o.heavy ? 12 : 8, .6);
-  if (boss) { e.poise -= o.poise ?? (o.heavy ? 18 : 6); if (e.poise <= 0 && e.stun <= 0 && !e.invuln) breakBoss(e); if (!e.p2 && e.hp <= e.maxHp * .5 && e.hp > 0) phaseTwo(e); else if (e.p2 && !e.ulted && e.hp <= e.maxHp * .3 && e.hp > 0 && P.state !== 'ult') bossUlt(e); }
+  if (boss) { e.poise -= o.poise ?? (o.heavy ? 18 : 6); if (e.poise <= 0 && e.stun <= 0 && !e.invuln) breakBoss(e); if (!e.p2 && e.hp <= e.maxHp * .5 && e.hp > 0) phaseTwo(e); else if (e.p2 && !e.ulted && e.hp <= e.maxHp * .3 && e.hp > 0 && P.state !== 'ult') (e.kind === 'boss2' ? boss2Ult : bossUlt)(e); }
   else if (e.kind === 'elite' && !o.heavy && !interrupted) { e.hitstop = Math.min(e.hitstop, .04); }      /* light hits do not stagger the elite: use heavy hits, skills or a parry */
-  else if (e.kind === 'melee' && !o.heavy && !o.noChain && !interrupted && ++e.chain >= 3 && e.hp > 0) {      /* third light hit in a row: it shrugs it off and answers */
+  else if ((e.kind === 'melee' || e.kind === 'spirit') && !o.heavy && !o.noChain && !interrupted && ++e.chain >= 3 && e.hp > 0) {      /* third light hit in a row: it shrugs it off and answers */
     e.chain = 0; e.stun = 0; cancelSeq(e); e.yaw = angTo(e.pos, P.pos); fx.ring(e.pos, 1.5, AMBER, .3);
     const s = [wind(.4, { kind: 'fan', radius: 2.9, arc: 2.1, color: AMBER }, { dir: -1, track: .7 }), strike({ range: 2.9, arc: 2.1, dmg: 13, dir: -1, step: .6 }), rest(.8)]; s.cd = 1; startSeq(e, s, 'riposte');
   }
@@ -457,7 +551,7 @@ function damageEnemy(e, dmg, o = {}) {
 function kill(e, a) {
   gainUlt(6); e.dead = true; e.hp = 0; cancelSeq(e); e.kb.set(Math.sin(a) * 9, 0, Math.cos(a) * 9); P.qi = Math.min(100, P.qi + 8); sfx('die');
   if (e.bar) { scene.remove(...e.bar); e.bar = null; }
-  if (e.kind === 'boss') { G.bossUlt = false; sfx('roar'); G.slow = 1.2; G.shake = .8; fx.ring(e.pos, 10, GOLD, 1.2); fx.burst(e.pos, 70, CRIM, 9, 7, .35, 1.4); world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); G.projs.forEach((b) => { if (b.team === 'e') b.life = 0; }); after(2.6, () => setMode('win')); }
+  if (e.isBoss) { G.bossUlt = false; sfx('roar'); G.slow = 1.2; G.shake = .8; fx.ring(e.pos, 10, GOLD, 1.2); fx.burst(e.pos, 70, CRIM, 9, 7, .35, 1.4); world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); G.projs.forEach((b) => { if (b.team === 'e') b.life = 0; }); after(2.6, () => (G.stage === 1 ? nextStage() : setMode('win'))); }
   else fx.burst(e.pos, 22, [.2, .5, .22], 3, 3, .4, .9);
 }
 function updateEnemy(e, dt) {
@@ -467,7 +561,7 @@ function updateEnemy(e, dt) {
   if (e.spawnT > 0) { e.spawnT -= dt; e.y = -Math.max(0, e.spawnT) * 2; e.anim = 'idle'; return; }
   if (e.kb.lengthSq() > .02) { move(e, e.kb.x * dt, e.kb.z * dt); e.kb.multiplyScalar(Math.exp(-8 * dt)); }
   e.rainCd = Math.max(0, (e.rainCd || 0) - dt);
-  if (e.stun > 0) { e.stun -= dt; e.anim = 'hurt'; if (e.stun <= 0 && e.kind === 'boss') e.cd = .35; return; }
+  if (e.stun > 0) { e.stun -= dt; e.anim = 'hurt'; if (e.stun <= 0 && e.isBoss) e.cd = .35; return; }
   e.cd -= dt;
   if (e.seq) runSeq(e, dt); else if (G.intro <= 0) AI[e.kind](e, dt); else e.anim = 'idle';
 }
@@ -493,9 +587,9 @@ function updateProjs(dt) {
 }
 function separate() {
   const L = G.enemies.filter((e) => !e.dead && e.spawnT <= 0 && e.y < .5);
-  for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) { const a = L[i], b = L[j], dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z, d = Math.hypot(dx, dz) || .001, o = a.r + b.r + .15 - d; if (o > 0) { const wa = b.kind === 'boss' ? 1 : a.kind === 'boss' ? 0 : .5; a.pos.x -= dx / d * o * wa; a.pos.z -= dz / d * o * wa; b.pos.x += dx / d * o * (1 - wa); b.pos.z += dz / d * o * (1 - wa); } }
+  for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) { const a = L[i], b = L[j], dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z, d = Math.hypot(dx, dz) || .001, o = a.r + b.r + .15 - d; if (o > 0) { const wa = b.isBoss ? 1 : a.isBoss ? 0 : .5; a.pos.x -= dx / d * o * wa; a.pos.z -= dz / d * o * wa; b.pos.x += dx / d * o * (1 - wa); b.pos.z += dz / d * o * (1 - wa); } }
   const air = P.state === 'fly' || P.state === 'dive';
-  if (P.state !== 'dodge' && P.state !== 'dead' && !air) for (const e of L) { const dx = P.pos.x - e.pos.x, dz = P.pos.z - e.pos.z, d = Math.hypot(dx, dz) || .001, o = P.r + e.r - d; if (o > 0) { const w = e.kind === 'boss' ? 1 : .6; P.pos.x += dx / d * o * w; P.pos.z += dz / d * o * w; e.pos.x -= dx / d * o * (1 - w); e.pos.z -= dz / d * o * (1 - w); } }
+  if (P.state !== 'dodge' && P.state !== 'dead' && !air) for (const e of L) { const dx = P.pos.x - e.pos.x, dz = P.pos.z - e.pos.z, d = Math.hypot(dx, dz) || .001, o = P.r + e.r - d; if (o > 0) { const w = e.isBoss ? 1 : .6; P.pos.x += dx / d * o * w; P.pos.z += dz / d * o * w; e.pos.x -= dx / d * o * (1 - w); e.pos.z -= dz / d * o * (1 - w); } }
   for (const e of L) clampToArena(e.pos, e.r); if (!air) clampToArena(P.pos, P.r);
 }
 
@@ -505,35 +599,44 @@ function showBanner(h, p, dur = 3) { bannerEl.children[0].textContent = h; banne
 function setMode(m) { G.mode = m; document.body.classList.toggle('play', m === 'play'); for (const id of ['title', 'dead', 'win']) $(id).classList.toggle('on', id === m); }
 function clearField() {
   for (const e of G.enemies) { scene.remove(e.body.root); if (e.bar) scene.remove(...e.bar); cancelSeq(e); } G.enemies.length = 0;
-  for (const b of G.projs) { if (b.mesh) scene.remove(b.mesh); else b.fxh.kill(); } G.projs.length = 0; G.timers.length = 0; G.tokens.length = 0; G.boss = null;
+  for (const b of G.projs) { if (b.mesh) scene.remove(b.mesh); else b.fxh.kill(); } G.projs.length = 0; G.timers.length = 0; G.tokens.length = 0; G.boss = null; for (const r1 of rings) scene.remove(r1.g); rings.length = 0;
 }
 const WAVES = [['melee', 'melee', 'melee', 'melee', 'ranged', 'ranged'], ['melee', 'melee', 'melee', 'ranged', 'ranged', 'ranged', 'elite'], ['melee', 'melee', 'melee', 'melee', 'ranged', 'ranged', 'elite', 'elite']];
+const WAVES2 = [['wolf', 'wolf', 'wolf', 'wolf', 'spirit', 'spirit'], ['wolf', 'wolf', 'wolf', 'frost', 'frost', 'frost', 'spirit', 'spirit'], ['wolf', 'wolf', 'wolf', 'wolf', 'spirit', 'spirit', 'spirit', 'frost', 'frost']];
+const waves = () => (G.stage === 2 ? WAVES2 : WAVES);
 function spawnWave(i) {      /* each batch rises in a loose ring, never right on top of the player */
-  G.waveIdx = i; const n = WAVES[i].length, off = Math.random() * TAU;
-  WAVES[i].forEach((k, j) => { let x = 0, z = 0; for (let t = 0; t < 12; t++) { const a = off + j / n * TAU + (Math.random() - .5) * .5, r = (k === 'ranged' ? 10.5 : 8) + Math.random() * 1.5; x = Math.sin(a) * r; z = Math.cos(a) * r; if (Math.hypot(x - P.pos.x, z - P.pos.z) > 5) break; } const p = clampToArena(new THREE.Vector3(x, 0, z), .7); after(j * .12, () => spawn(k, p.x, p.z)); });
+  G.waveIdx = i; const WV = waves(), n = WV[i].length, off = Math.random() * TAU;
+  WV[i].forEach((k, j) => { let x = 0, z = 0; for (let t = 0; t < 12; t++) { const a = off + j / n * TAU + (Math.random() - .5) * .5, r = (k === 'ranged' || k === 'frost' ? 10.5 : 8) + Math.random() * 1.5; x = Math.sin(a) * r; z = Math.cos(a) * r; if (Math.hypot(x - P.pos.x, z - P.pos.z) > 5) break; } const p = clampToArena(new THREE.Vector3(x, 0, z), .7); after(j * .12, () => spawn(k, p.x, p.z)); });
 }
-function startWave() { spawnWave(0); showBanner('', '演武台上還有東西在動。', 3); }
+function startWave() { spawnWave(0); if (G.stage === 2) showBanner('寒潭劍塚', '山門之後，是一整片結了冰的劍。', 3.6); else showBanner('', '演武台上還有東西在動。', 3); }
 function startBoss() {
-  G.phase = 'boss'; const b = G.boss = spawn('boss', 0, -11.5); b.cd = .4; G.intro = 2.8; $('boss').classList.add('on'); sfx('boom'); G.shake = .3; fx.ring(b.pos, 6, CRIM, 1.1);
-  showBanner('厲無咎', '守在這裡的，是當年親手關上山門的人。', 3.6);
+  const two = G.stage === 2; G.phase = 'boss'; const b = G.boss = spawn(two ? 'boss2' : 'boss', 0, -11.5); b.cd = .4; G.intro = 2.8; $('boss').classList.add('on'); sfx('boom'); G.shake = .3; fx.ring(b.pos, 6, two ? LAV : CRIM, 1.1);
+  $('boss').firstElementChild.innerHTML = two ? '霜晚<small>守塚人</small>' : '厲無咎<small>墮劍尊</small>';
+  if (two) showBanner('霜晚', '她在這裡守了很久，久到忘了是在等誰。', 3.6); else showBanner('厲無咎', '守在這裡的，是當年親手關上山門的人。', 3.6);
+}
+// stage one -> two: fade to black, swap the world, carry the player's state over with a partial heal
+function nextStage() {
+  G.phase = 'travel'; G.fadeTo = 1; showBanner('', '山門開了。風是從門後吹來的。', 2.6);
+  after(1.5, () => { clearField(); setStage(2); R.grade.uniforms.uTint.value.set(0, 0, 0); $('boss').classList.remove('on'); if (beast) beast.on = false; P.pos.set(0, 0, 7); P.yaw = Math.PI; P.kb.set(0, 0, 0); P.state = 'idle'; P.y = 0; P.hp = Math.min(P.maxHp, P.hp + 70); P.qi = Math.max(P.qi, 50); G.focus.set(0, 0, 5);
+    G.fadeTo = 0; G.phase = 'wave'; G.waveAt = G.time; G.intro = 0; after(.6, startWave); });
 }
 function startGame(stage) {
   clearField(); Object.assign(P, { orbitT: 0, cdF: 0, cdC: 0, cdV: 0, lean: 0, ult: Q.has('ult') ? 100 : 0, hp: P.maxHp, st: 100, qi: 30, state: 'idle', hidden: false, t: 0, hitstop: 0, iframe: 1, buf: null, counterT: 0, cdQ: 0, cdE: 0, yaw: Math.PI, y: 0 }); P.pos.set(0, 0, 7); P.kb.set(0, 0, 0);
-  G.bossUlt = false; if (beast) beast.on = false; world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); $('boss').classList.remove('on'); G.slow = 0; G.intro = 0; setMode('play');
-  if (stage === 'boss') startBoss(); else { G.phase = 'wave'; G.waveAt = G.time; startWave(); }
+  setStage(stage === '2' || stage === 'boss2' ? 2 : 1); G.fadeTo = 0; G.bossUlt = false; if (beast) beast.on = false; world.setMood(0); R.grade.uniforms.uTint.value.set(0, 0, 0); $('boss').classList.remove('on'); G.slow = 0; G.intro = 0; setMode('play');
+  if (stage === 'boss' || stage === 'boss2') startBoss(); else { G.phase = 'wave'; G.waveAt = G.time; startWave(); }
 }
 G.start = startGame;
 function flow(dt) {
-  const left = G.enemies.filter((e) => !e.dead).length, pending = G.timers.length && G.enemies.length < WAVES[G.waveIdx].length;
-  if (G.phase === 'wave' && G.waveIdx < WAVES.length - 1 && left <= 1 && G.time - (G.waveAt || 0) > 3) { G.waveAt = G.time; spawnWave(G.waveIdx + 1); showBanner('', G.waveIdx === 1 ? '符紙又亮了一片。' : '還沒完。', 2.2); }
-  else if (G.phase === 'wave' && G.waveIdx === WAVES.length - 1 && left === 0 && G.time - (G.waveAt || 0) > 3) { G.phase = 'lull'; P.hp = Math.min(P.maxHp, P.hp + 35); fx.ring(P.pos, 2.4, [.4, 1.4, .7], .8); after(2.4, startBoss); }
+  const left = G.enemies.filter((e) => !e.dead).length, WV = waves();
+  if (G.phase === 'wave' && G.waveIdx < WV.length - 1 && left <= 1 && G.time - (G.waveAt || 0) > 3) { G.waveAt = G.time; spawnWave(G.waveIdx + 1); showBanner('', G.stage === 2 ? (G.waveIdx === 1 ? '冰下有東西在翻身。' : '狼群還沒散。') : (G.waveIdx === 1 ? '符紙又亮了一片。' : '還沒完。'), 2.2); }
+  else if (G.phase === 'wave' && G.waveIdx === WV.length - 1 && left === 0 && G.time - (G.waveAt || 0) > 3) { G.phase = 'lull'; P.hp = Math.min(P.maxHp, P.hp + 35); fx.ring(P.pos, 2.4, [.4, 1.4, .7], .8); after(2.4, startBoss); }
   G.intro = Math.max(0, G.intro - dt);
-  for (let i = G.enemies.length - 1; i >= 0; i--) { const e = G.enemies[i]; if (e.dead && e.kind !== 'boss' && e.deadT > 3.2) { scene.remove(e.body.root); G.enemies.splice(i, 1); } }
+  for (let i = G.enemies.length - 1; i >= 0; i--) { const e = G.enemies[i]; if (e.dead && !e.isBoss && e.deadT > 3.2) { scene.remove(e.body.root); G.enemies.splice(i, 1); } }
 }
 /* sound starts on the first click or key press of any kind (browsers require a gesture), not only on the title click */
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => initAudio(Q.has('mute')), true);
 initTouch(keys, pressed);
-addEventListener('pointerdown', () => { if (!G.ready || isPortrait()) return; if (G.mode !== 'play') { initAudio(Q.has('mute')); startGame(G.mode === 'win' ? undefined : (G.mode === 'dead' && G.boss ? 'boss' : Q.get('stage'))); pressed.delete('LMB'); } });
+addEventListener('pointerdown', () => { if (!G.ready || isPortrait()) return; if (G.mode !== 'play') { initAudio(Q.has('mute')); startGame(G.mode === 'win' ? undefined : G.mode === 'dead' ? (G.stage === 2 ? (G.boss ? 'boss2' : '2') : (G.boss ? 'boss' : undefined)) : Q.get('stage'));      /* dying restarts the stage (or its boss) you were on */ pressed.delete('LMB'); } });
 
 // ---------- camera, hud ----------
 const CAM = new THREE.Vector3(0, 16.5, 11.8); camera.position.copy(G.focus).add(CAM); camera.lookAt(G.focus.x, 1, G.focus.z);
@@ -548,6 +651,7 @@ function updateCamera(dt) {
   G.flash = Math.max(0, G.flash - dt * 3.4); const gu = R.grade.uniforms; gu.uFlash.value = G.flash * G.flash; gu.uExposure.value += ((ulting && P.t < ULT.fin ? (P.t < ULT.cut ? .56 : .34) : G.bossUlt ? .8 : 1.15) - gu.uExposure.value) * (1 - Math.exp(-dt * (ulting && P.t >= ULT.cut ? 22 : 6)));
   G.shock = Math.max(0, G.shock - dt * 2.2); gu.uShock.value = G.shock; gu.uMono.value += ((ulting && P.t >= ULT.cut - .04 && P.t < ULT.fin ? 1 : 0) - gu.uMono.value) * (1 - Math.exp(-dt * 30));
 }
+const fadeEl = $('fade');
 const W = (el, v) => { el.style.width = (Math.max(0, Math.min(1, v)) * 100).toFixed(1) + '%'; };
 const hud = { hp: $('hp').children, st: $('st').children, qi: $('qi').children, bhp: $('bhp').children, bpo: $('bpo').children, hurt: $('hurt'), counter: $('counter'), sq: $('s-q'), sf: $('s-f'), sc: $('s-c'), sv: $('s-v'), sfl: $('s-fly'), ur: $('s-r-ring'), se: $('s-e'), sd: $('s-dge'), sb: $('s-blk') };
 function updateHud(dt) {
@@ -572,18 +676,19 @@ function place(a, dt) {
 
 // ---------- loop ----------
 function update(dt) {
-  world.update(dt, G.time);
+  world.update(dt, G.time, G.focus);
   if (G.mode === 'play') {
     updateAim(); G.tokenCd = Math.max(0, G.tokenCd - dt);
     for (let i = G.timers.length - 1; i >= 0; i--) { const t = G.timers[i]; t.t -= dt; if (t.t <= 0) { G.timers.splice(i, 1); t.fn(); } }
     updatePlayer(dt); updateOrbit(dt); updateBeast(dt); const frozen = P.state === 'ult' && P.t < ULT.fin;
     for (const e of [...G.enemies]) { if (frozen && !e.dead) { e.flash = Math.max(0, e.flash - dt); e.hitstop = Math.max(0, e.hitstop - dt); if (e.kb.lengthSq() > .02) { move(e, e.kb.x * dt, e.kb.z * dt); e.kb.multiplyScalar(Math.exp(-8 * dt)); } e.anim = 'hurt'; continue; } updateEnemy(e, dt); }
-    separate(); if (!frozen) updateProjs(dt); flow(dt);
+    separate(); if (!frozen) { updateProjs(dt); updateRings(dt); } flow(dt);
   } else { P.anim = P.state === 'dead' ? 'dead' : 'idle'; updateBeast(dt); }
   place(P, dt); for (const e of G.enemies) place(e, dt);
   board.visible = G.mode === 'play' && (P.state === 'fly' || P.state === 'dive'); if (board.visible) { board.position.set(P.pos.x, (P.y || 0) - .04, P.pos.z); board.rotation.order = 'YXZ'; board.rotation.set(-(P.lean || 0) * .6, P.yaw, 0); }
-  if (Math.random() < dt * 5) { const L = world.lanterns[Math.random() * 4 | 0].l.position; fx.p.spawn(L.x, 1.7, L.z, (Math.random() - .5) * .5, .7 + Math.random(), (Math.random() - .5) * .5, 1.6, .09, 2, .8, .25, -.3, .6); }
-  music(G.mode !== 'play' ? 'explore' : G.phase === 'boss' && G.boss && !G.boss.dead ? 'boss' : G.phase === 'wave' ? 'battle' : 'explore');
+  if (world.lanterns.length && Math.random() < dt * 5) { const L = world.lanterns[Math.random() * 4 | 0].l.position; fx.p.spawn(L.x, 1.7, L.z, (Math.random() - .5) * .5, .7 + Math.random(), (Math.random() - .5) * .5, 1.6, .09, 2, .8, .25, -.3, .6); }
+  music(G.mode !== 'play' ? 'explore' : G.phase === 'boss' && G.boss && !G.boss.dead ? (G.stage === 2 ? 'boss2' : 'boss') : G.phase === 'wave' ? (G.stage === 2 ? 'battle2' : 'battle') : 'explore');
+  G.fade = (G.fade || 0) + ((G.fadeTo || 0) - (G.fade || 0)) * Math.min(1, dt * 3.2); fadeEl.style.opacity = G.fade.toFixed(3);
   fx.update(dt); updateCamera(dt); updateHud(dt);
 }
 let last = performance.now();
@@ -596,7 +701,7 @@ const dbg = debugPanel(() => `mode ${G.mode}/${G.phase}  state ${P.state}  t ${P
 // test hooks: advance frames by hand (hidden tabs do not animate), fake a key press, read state
 G.step = (n = 60, dt = 1 / 60) => { for (let i = 0; i < n; i++) frame(0, dt); };
 G.clamp = clampToArena; G.music = musicState; G.audio = audioProbe; G.press = (...c) => c.forEach((k) => pressed.add(k)); G.keys = keys; G.mouse = mouse; G.aim = aim; G.R = R; G.world = world;
-G.state = () => ({ mode: G.mode, phase: G.phase, p: { s: P.state, hp: Math.round(P.hp), st: Math.round(P.st), qi: Math.round(P.qi), x: +P.pos.x.toFixed(2), z: +P.pos.z.toFixed(2) }, e: G.enemies.map((e) => ({ k: e.kind, hp: Math.round(e.hp), x: +e.pos.x.toFixed(1), z: +e.pos.z.toFixed(1), dead: e.dead, seq: e.seq ? e.last + ':' + e.si : '', stun: +e.stun.toFixed(2) })), projs: G.projs.length, fx: fx.items.length });
+G.state = () => ({ stage: G.stage, mode: G.mode, phase: G.phase, p: { s: P.state, hp: Math.round(P.hp), st: Math.round(P.st), qi: Math.round(P.qi), x: +P.pos.x.toFixed(2), z: +P.pos.z.toFixed(2) }, e: G.enemies.map((e) => ({ k: e.kind, hp: Math.round(e.hp), x: +e.pos.x.toFixed(1), z: +e.pos.z.toFixed(1), dead: e.dead, seq: e.seq ? e.last + ':' + e.si : '', stun: +e.stun.toFixed(2) })), projs: G.projs.length, fx: fx.items.length });
 
 G.ready = true; $('go').textContent = '點擊開始';
 if (Q.has('auto')) startGame(Q.get('stage'));

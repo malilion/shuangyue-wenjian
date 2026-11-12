@@ -8,14 +8,20 @@
     "w_jian": "4fb774eb-8de7-499d-b7fa-44ddd9bf44ba",
     "w_dao": "a1cd191d-3a41-4ce9-804b-5e088ce925c7",
     "w_great": "c64160fe-a5bf-4c5b-9467-78eaafbb84ce",
-    "beast": "a45461d2-94ac-4fff-bb61-15dc6dba0a7e"
+    "beast": "a45461d2-94ac-4fff-bb61-15dc6dba0a7e",
+    "boss2": "dbfd3620-c42a-4013-b47d-52a168bea19f",
+    "spirit": "464e54b9-4de3-4877-8f03-dd556ab81719",
+    "wolf": "a8b7f335-e182-4b1e-90c2-1cacf6af06af"
   },
   "rigged": {
     "player": "0b1bcb3b-84bc-4b5a-983a-70c4ca9c7577",
     "melee": "cf694d54-81f7-4e14-93b0-7aa329563521",
     "ranged": "9f8f61ec-7fa1-4891-a42e-8a1fa768bad5",
     "boss": "3453d68f-4ef5-4226-9969-51bb398bf3a1",
-    "beast": "48b2285d-2d2e-4a57-bf2a-c0069f77e3b6"
+    "beast": "48b2285d-2d2e-4a57-bf2a-c0069f77e3b6",
+    "boss2": "60e4adc9-f48d-4896-ba42-e0b3d6c84fbf",
+    "spirit": "a0d0240e-655d-42be-b25f-9537f6764fa7",
+    "wolf": "bfe5276a-432b-48e2-bcde-1db70479e244"
   },
   "props": {
     "lantern": "0f28fda4-539f-4836-9996-f4bf2dfd6435",
@@ -23,6 +29,9 @@
     "pillar_broken": "c4b46dc9-2a8d-420c-b1ff-1a1b0ed312a4",
     "pillar_fallen": "a9876469-6517-4e95-8e59-79c69c87af6e",
     "burner": "fba798b8-38d7-4b3d-bdea-d5173c704379",
-    "gate": "80ce188c-ff27-435b-ba13-3e1a86391a9d"
+    "gate": "80ce188c-ff27-435b-ba13-3e1a86391a9d",
+    "monument": "f95905f3-a146-49c4-bddd-3bfaedd08630",
+    "crystal": "0f1570ac-d76c-4a0a-854d-c297073d7d2a",
+    "stele": "196381a2-b809-49d1-aed6-9db52a66662f"
   }
 }
