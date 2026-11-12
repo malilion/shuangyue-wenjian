@@ -119,6 +119,15 @@ const BEAM_FRAG = /* glsl */`
     gl_FragColor = vec4(uColor * a, 1.);
   }`;
 
+const WALL_FRAG = /* glsl */`
+  varying vec2 vUv; uniform float uTime, uAlpha; uniform vec3 uColor; ${NOISE}
+  void main(){
+    float h = clamp(vUv.y, 0., 1.), a = vUv.x * 90.;
+    float bolts = pow(noise(vec2(a, uTime * 9. + h * 3.)), 3.) * 2.2 + pow(noise(vec2(a * .31 + 4., h * 6. - uTime * 5.)), 2.) * .8;
+    float v = (bolts * (1. - h * .75) + smoothstep(.12, 0., h) * 1.4) * uAlpha;
+    gl_FragColor = vec4(uColor * v, 1.);
+  }`;
+
 class Particles {
   constructor(scene, cap = 1400) {
     this.cap = cap; this.i = 0; this.pos = new Float32Array(cap * 3); this.col = new Float32Array(cap * 4); this.size = new Float32Array(cap);
@@ -223,6 +232,13 @@ export class FX {
     const geo = cached('beam', () => { const g = new THREE.CylinderGeometry(1, 1, 1, 14, 1, true); g.translate(0, .5, 0); return g; });
     const m = new THREE.Mesh(geo, this._mat(BEAM_FRAG, { uT: { value: 0 }, uSeed: { value: Math.random() * 9 }, uColor: { value: new THREE.Vector3(...color) } }, true));
     m.position.set(pos.x, 0, pos.z); m.renderOrder = 5; this._add(m, dur, (it, p) => { m.material.uniforms.uT.value = p; const e = 1 - Math.pow(1 - p, 3); m.scale.set(radius * (1.4 - .9 * e), height * (.25 + .75 * e), radius * (1.4 - .9 * e)); });
+  }
+  // A crackling cylinder wall. Returns { set(radius), kill() }.
+  wall(pos, radius, height, color = [1.6, 1.2, .5]) {
+    const geo = cached('beam', () => { const g = new THREE.CylinderGeometry(1, 1, 1, 14, 1, true); g.translate(0, .5, 0); return g; }), wgeo = cached('wall', () => { const g = new THREE.CylinderGeometry(1, 1, 1, 96, 1, true); g.translate(0, .5, 0); return g; });
+    const m = new THREE.Mesh(wgeo, this._mat(WALL_FRAG, { uTime: { value: 0 }, uAlpha: { value: 0 }, uColor: { value: new THREE.Vector3(...color) } }, true)); m.position.set(pos.x, 0, pos.z); m.scale.set(radius, height, radius); m.renderOrder = 5;
+    let out = false; const it = this._add(m, 999, (i2, p, dt) => { const u = m.material.uniforms; u.uTime.value = this.time; u.uAlpha.value += ((out ? 0 : 1) - u.uAlpha.value) * Math.min(1, dt * 6); if (out && u.uAlpha.value < .02) i2.dead = true; });
+    return { set: (r) => { m.scale.x = m.scale.z = r; }, kill: () => { out = true; } };
   }
   // Rune circle on the ground: unfolds from the centre, rings and polygons counter-rotate, fades at the end.
   sigil(pos, radius, color = [.4, 1.2, 1.4], dur = 2.5) {

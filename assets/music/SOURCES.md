@@ -11,5 +11,7 @@ take 1 used. `raw/` keeps both takes as downloaded. The `.mp3` files are made wi
 | boss.mp3 | Fallen Sword Saint Boss Battle | suona, dagu, timpani, tremolo strings, D minor, 140 BPM |
 | battle2.mp3 | Frozen Lake Blade Duel | guzheng, pipa, frame drums, bamboo flute, E minor pentatonic, 132 BPM |
 | boss2.mp3 | Immortal Blade Duel | erhu lead, guzheng tremolo, bells, taiko, strings, E minor, 150 BPM |
+| battle3.mp3 | Celestial Guard Duel | brass, war drums, yangqin, dizi, timpani, A minor, 138 BPM |
+| boss3.mp3 | Lord of the Sky Gate | war drums, low brass, tubular bells, suona, erhu, D minor, 156 BPM |
 
 Usage rights follow Google Flow Music's terms for the generating account; check them before distributing.

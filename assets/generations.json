@@ -11,7 +11,10 @@
     "beast": "a45461d2-94ac-4fff-bb61-15dc6dba0a7e",
     "boss2": "dbfd3620-c42a-4013-b47d-52a168bea19f",
     "spirit": "464e54b9-4de3-4877-8f03-dd556ab81719",
-    "wolf": "a8b7f335-e182-4b1e-90c2-1cacf6af06af"
+    "wolf": "a8b7f335-e182-4b1e-90c2-1cacf6af06af",
+    "boss3": "2ca2d9bf-9e01-40a7-95d6-533816a4dcf7",
+    "guard": "3b6cb3e9-4466-4906-a3fc-1efcb4f43e52",
+    "hawk": "d792549a-aa57-4f2b-a5ba-23680073edfc"
   },
   "rigged": {
     "player": "0b1bcb3b-84bc-4b5a-983a-70c4ca9c7577",
@@ -21,7 +24,10 @@
     "beast": "48b2285d-2d2e-4a57-bf2a-c0069f77e3b6",
     "boss2": "60e4adc9-f48d-4896-ba42-e0b3d6c84fbf",
     "spirit": "a0d0240e-655d-42be-b25f-9537f6764fa7",
-    "wolf": "bfe5276a-432b-48e2-bcde-1db70479e244"
+    "wolf": "bfe5276a-432b-48e2-bcde-1db70479e244",
+    "boss3": "5d953693-3c9c-4012-b8ee-6786931b0eff",
+    "guard": "53d09455-d37b-4129-a618-76e63133ddf6",
+    "hawk": "24d578b9-5b75-4b0e-97ec-b40f1234279c"
   },
   "props": {
     "lantern": "0f28fda4-539f-4836-9996-f4bf2dfd6435",
@@ -32,6 +38,9 @@
     "gate": "80ce188c-ff27-435b-ba13-3e1a86391a9d",
     "monument": "f95905f3-a146-49c4-bddd-3bfaedd08630",
     "crystal": "0f1570ac-d76c-4a0a-854d-c297073d7d2a",
-    "stele": "196381a2-b809-49d1-aed6-9db52a66662f"
+    "stele": "196381a2-b809-49d1-aed6-9db52a66662f",
+    "skygate": "ed62fcf8-75a9-44f7-b268-a90969cf1101",
+    "jadepillar": "d8f6d88f-041b-4ecd-bc29-16b89eece772",
+    "bell": "3741426e-f087-4c5a-993e-acb20af02c46"
   }
 }

@@ -131,9 +131,11 @@ export function makeBeast(gltf, o) {
     gltf.userData.bclips = out;
   }
   // long axis along +Z with the head leading, scaled to the requested body length, paws on the ground
-  root.updateMatrixWorld(true); let box = new THREE.Box3().setFromObject(inner); const size = box.getSize(V()); if (size.x > size.z) fit.rotation.y = Math.PI / 2; root.updateMatrixWorld(true);
-  if (head) { box = new THREE.Box3().setFromObject(inner); if (head.getWorldPosition(V()).z < box.getCenter(V()).z) fit.rotation.y += Math.PI; } if (o.flip) fit.rotation.y += Math.PI; root.updateMatrixWorld(true);
-  box = new THREE.Box3().setFromObject(inner); fit.scale.setScalar(o.length / (box.max.z - box.min.z)); root.updateMatrixWorld(true);
+  root.updateMatrixWorld(true); let box = new THREE.Box3().setFromObject(inner); const size = box.getSize(V());
+  if (head) { const c = box.getCenter(V()), hp = head.getWorldPosition(V()), ang = Math.atan2(hp.x - c.x, hp.z - c.z); fit.rotation.y = -Math.round(ang / (Math.PI / 2)) * (Math.PI / 2); }      /* the head says which way is forward (a bird is wider than it is long) */
+  else if (size.x > size.z) fit.rotation.y = Math.PI / 2;
+  if (o.flip) fit.rotation.y += Math.PI; root.updateMatrixWorld(true);
+  box = new THREE.Box3().setFromObject(inner); fit.scale.setScalar(o.length / (o.span ? Math.max(box.max.x - box.min.x, box.max.z - box.min.z) : box.max.z - box.min.z)); root.updateMatrixWorld(true);
   box = new THREE.Box3().setFromObject(inner); fit.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
   const mixer = new THREE.AnimationMixer(inner), acts = {}; for (const [name, id] of Object.entries(o.clips)) if (gltf.userData.bclips[id]) acts[name] = mixer.clipAction(gltf.userData.bclips[id]);
   let now = null;

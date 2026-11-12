@@ -22,10 +22,10 @@ function tone(f0, f1, dur, gain, type = 'sine') {
 }
 // Music: assets/music/{explore,battle,boss}.mp3, all looping from the moment they load, only their gains move.
 // Kept at roughly a third of the effects level so hits stay on top. Missing files are skipped silently.
-const tracks = {}, FALLBACK = { battle2: 'battle', boss2: 'boss' };      /* stage-two tracks fall back to stage one's until their files exist */ let want = null, musicOn = false; const MUSIC_GAIN = .2;
+const tracks = {}, FALLBACK = { battle2: 'battle', boss2: 'boss', battle3: 'battle', boss3: 'boss' };      /* stage-two tracks fall back to stage one's until their files exist */ let want = null, musicOn = false; const MUSIC_GAIN = .2;
 async function loadMusic() {
   if (musicOn) return; musicOn = true;
-  for (const name of ['explore', 'battle', 'boss', 'battle2', 'boss2']) {
+  for (const name of ['explore', 'battle', 'boss', 'battle2', 'boss2', 'battle3', 'boss3']) {
     try { const r = await fetch(`assets/music/${name}.mp3`); if (!r.ok) continue; const b = await ctx.decodeAudioData(await r.arrayBuffer());
       const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = b; src.loop = true; g.gain.value = 0; src.connect(g).connect(out); src.start(); tracks[name] = g; applyMusic(2.5); } catch { /* optional file */ }
   }

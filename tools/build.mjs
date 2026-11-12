@@ -20,10 +20,11 @@ async function glb(name, { tex = 1024, skinned = false } = {}) {
     return Buffer.from(await io.writeBinary(d)); });
   F[`assets/models/${name}.glb`] = buf; A[`assets/models/${name}.glb`] = 'data:model/gltf-binary;base64,' + buf.toString('base64'); raw += buf.length; console.log(name.padEnd(14), mb(fs.statSync(file).size), '->', mb(buf.length));
 }
-for (const n of ['player', 'boss', 'boss2']) await glb(n, { tex: 1536, skinned: true });
-for (const n of ['melee', 'ranged', 'beast', 'spirit', 'wolf']) await glb(n, { tex: 1024, skinned: true });
+for (const n of ['player', 'boss', 'boss2', 'boss3']) await glb(n, { tex: 1536, skinned: true });
+for (const n of ['melee', 'ranged', 'beast', 'spirit', 'wolf', 'guard', 'hawk']) await glb(n, { tex: 1024, skinned: true });
 for (const n of ['w_jian', 'w_dao']) await glb(n, { tex: 512 });
-for (const n of ['w_great', 'lantern', 'pillar_tall', 'pillar_broken', 'pillar_fallen', 'burner', 'crystal', 'stele', 'monument']) await glb(n, { tex: 1024 });
+for (const n of ['w_great', 'lantern', 'pillar_tall', 'pillar_broken', 'pillar_fallen', 'burner', 'crystal', 'stele', 'monument', 'jadepillar', 'bell']) await glb(n, { tex: 1024 });
+await glb('skygate', { tex: 1536 });
 await glb('gate', { tex: 1536 });
 if (fs.existsSync('assets/sfx')) for (const f of fs.readdirSync('assets/sfx').filter((f) => f.endsWith('.mp3'))) { const b = fs.readFileSync('assets/sfx/' + f); F['assets/sfx/' + f] = b; A['assets/sfx/' + f] = 'data:audio/mpeg;base64,' + b.toString('base64'); raw += b.length; src += b.length; }
 // music: re-encode to ~96 kbps stereo
